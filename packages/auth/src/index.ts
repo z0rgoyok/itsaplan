@@ -6,7 +6,7 @@ import { createAuthMiddleware, APIError } from 'better-auth/api';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { passkey } from '@better-auth/passkey';
 import { apiKey } from '@better-auth/api-key';
-import { openAPI, magicLink, username } from 'better-auth/plugins';
+import { captcha, openAPI, magicLink, username } from 'better-auth/plugins';
 import * as schema from '@repo/db/schema';
 import {
   getAuthSettings,
@@ -63,6 +63,13 @@ const baseURL = process.env.API_URL;
 if (!baseURL) {
   throw new Error('API_URL is not set: public origin of the backend.');
 }
+
+const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY?.trim();
+const turnstileSecretKey = process.env.TURNSTILE_SECRET_KEY?.trim();
+if (Boolean(turnstileSiteKey) !== Boolean(turnstileSecretKey)) {
+  throw new Error('TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY must be set together.');
+}
+const turnstileHostnames = trustedOrigins.map((origin) => new URL(origin).hostname);
 
 // User roles. "god" is the owner of the instance: the very first registered user
 // gets it automatically; everyone after is a plain "user". The role is assigned
@@ -297,6 +304,7 @@ export const auth = betterAuth({
             : eq(schema.user.username, (body?.username ?? '').trim().toLowerCase());
         if (await isUnverified(identifier)) {
           throw new APIError('FORBIDDEN', {
+            code: 'EMAIL_NOT_CONFIRMED',
             message: 'Confirm your email address before signing in',
           });
         }
@@ -353,6 +361,15 @@ export const auth = betterAuth({
   },
 
   plugins: [
+    captcha({
+      provider: 'cloudflare-turnstile',
+      secretKey: turnstileSecretKey ?? 'captcha-disabled',
+      endpoints: turnstileSecretKey
+        ? ['/sign-up/email', '/sign-in/email', '/sign-in/username', '/request-password-reset']
+        : ['/captcha-disabled'],
+      expectedAction: 'auth',
+      allowedHostnames: turnstileHostnames,
+    }),
     // WebAuthn passkeys, a second sign-in method alongside email + password. A
     // passkey is added to an already signed-in account (passkey.addPasskey) and
     // then used to sign in (signIn.passkey). Adds the `passkey` table.

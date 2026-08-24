@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -10,12 +10,15 @@ import AuthFormHeader from '../AuthFormHeader';
 import AuthMessagePanel from '../AuthMessagePanel';
 import { sendPasswordResetEmail } from '../../services/auth.service';
 import { useAuthAction } from '../../hooks/useAuthAction';
+import AuthTurnstile, { authCaptchaEnabled, type AuthTurnstileHandle } from '../AuthTurnstile';
 
 // Asks for the address and mails a reset link. The answer is the same whether or not
 // an account exists, so this screen never tells the visitor which it was.
 export default function AuthForgotPasswordForm() {
   const t = useTranslations('auth');
   const [email, setEmail] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef<AuthTurnstileHandle>(null);
   const [sent, setSent] = useState(false);
   const { error, pending, run } = useAuthAction();
 
@@ -23,8 +26,12 @@ export default function AuthForgotPasswordForm() {
     event.preventDefault();
     run(
       async () => {
-        await sendPasswordResetEmail(email);
-        setSent(true);
+        try {
+          await sendPasswordResetEmail(email, captchaToken);
+          setSent(true);
+        } finally {
+          captchaRef.current?.reset();
+        }
       },
       { redirect: false },
     );
@@ -68,8 +75,10 @@ export default function AuthForgotPasswordForm() {
 
         {error && <FieldError>{error}</FieldError>}
 
+        <AuthTurnstile ref={captchaRef} onTokenChange={setCaptchaToken} />
+
         <Field>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || (authCaptchaEnabled && !captchaToken)}>
             {pending ? t('forgotPassword.submitPending') : t('forgotPassword.submit')}
           </Button>
         </Field>

@@ -94,6 +94,8 @@ services:
       # API_URL is the api origin; APP_URL is the web origin.
       API_URL: ${SERVICE_URL_API:-http://localhost:3000}
       APP_URL: ${SERVICE_URL_WEB:-http://localhost:3001}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       # To override the cookie parent domain (multi-label TLDs / deep subdomains),
       # add a COOKIE_DOMAIN env in Coolify — the code reads it if present.
       S3_ENDPOINT: http://minio:9000
@@ -175,6 +177,7 @@ services:
         # The api origin, inlined into the web bundle at build time. Sourced from
         # Coolify's Domain for the api service.
         NEXT_PUBLIC_API_URL: ${SERVICE_URL_API:-http://localhost:3000}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
         # Legal document URLs shown on the logged-out screens; empty hides the notice.
         NEXT_PUBLIC_PRIVACY_URL: ${PRIVACY_URL:-}
         NEXT_PUBLIC_TERMS_URL: ${TERMS_URL:-}

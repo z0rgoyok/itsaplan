@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -19,17 +19,28 @@ import AuthMessagePanel from '../AuthMessagePanel';
 import { signInWithGoogle, signOutUnverified, signUpWithEmail } from '../../services/auth.service';
 import { useAuthAction } from '../../hooks/useAuthAction';
 import { useAuthConfig } from '@/services/authConfig.service';
+import AuthTurnstile, { authCaptchaEnabled, type AuthTurnstileHandle } from '../AuthTurnstile';
 
 export default function AuthRegisterForm() {
   const t = useTranslations('auth');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef<AuthTurnstileHandle>(null);
   const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
   const { error, pending, setError, run } = useAuthAction();
   const authConfig = useAuthConfig();
   const inviteOnly = authConfig?.registration === 'invite';
   const needsConfirmation = authConfig?.requireEmailVerification === true;
+
+  async function createAccount() {
+    try {
+      await signUpWithEmail({ email, password, captchaToken });
+    } finally {
+      captchaRef.current?.reset();
+    }
+  }
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -43,7 +54,7 @@ export default function AuthRegisterForm() {
     if (needsConfirmation) {
       run(
         async () => {
-          await signUpWithEmail({ email, password });
+          await createAccount();
           await signOutUnverified();
           setAwaitingConfirmation(true);
         },
@@ -51,7 +62,7 @@ export default function AuthRegisterForm() {
       );
       return;
     }
-    run(() => signUpWithEmail({ email, password }));
+    run(createAccount);
   }
 
   if (awaitingConfirmation) {
@@ -140,8 +151,10 @@ export default function AuthRegisterForm() {
 
         {error && <FieldError>{error}</FieldError>}
 
+        <AuthTurnstile ref={captchaRef} onTokenChange={setCaptchaToken} />
+
         <Field>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || (authCaptchaEnabled && !captchaToken)}>
             {pending ? t('register.submitPending') : t('register.submit')}
           </Button>
         </Field>

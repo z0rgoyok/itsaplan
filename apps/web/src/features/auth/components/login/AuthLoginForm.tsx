@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -18,6 +18,7 @@ import AuthFormHeader from '../AuthFormHeader';
 import AuthLoginAlternatives from './AuthLoginAlternatives';
 import AuthMessagePanel from '../AuthMessagePanel';
 import AuthUnconfirmedNotice from './AuthUnconfirmedNotice';
+import AuthTurnstile, { authCaptchaEnabled, type AuthTurnstileHandle } from '../AuthTurnstile';
 import {
   EmailNotConfirmedError,
   isEmailAddress,
@@ -43,6 +44,8 @@ export default function AuthLoginForm() {
   // go to an address.
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef<AuthTurnstileHandle>(null);
   // The address a sign-in link went to. Set on success, and it replaces the form:
   // there is nothing left to do on this screen until the inbox is opened.
   const [linkSentTo, setLinkSentTo] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export default function AuthLoginForm() {
     setMethod(next);
     setError(null);
     setUnconfirmed(false);
+    setCaptchaToken('');
   }
 
   function onSubmit(event: FormEvent) {
@@ -89,10 +93,12 @@ export default function AuthLoginForm() {
     }
     run(async () => {
       try {
-        await signInWithPassword({ identifier, password });
+        await signInWithPassword({ identifier, password, captchaToken });
       } catch (err) {
         if (err instanceof EmailNotConfirmedError) setUnconfirmed(true);
         throw err;
+      } finally {
+        captchaRef.current?.reset();
       }
     });
   }
@@ -182,6 +188,8 @@ export default function AuthLoginForm() {
 
         {(error || redirectError) && <FieldError>{error ?? redirectError}</FieldError>}
 
+        {!signingInWithLink && <AuthTurnstile ref={captchaRef} onTokenChange={setCaptchaToken} />}
+
         {unconfirmed && (
           <AuthUnconfirmedNotice
             resent={resent}
@@ -200,7 +208,10 @@ export default function AuthLoginForm() {
         )}
 
         <Field>
-          <Button type="submit" disabled={pending}>
+          <Button
+            type="submit"
+            disabled={pending || (!signingInWithLink && authCaptchaEnabled && !captchaToken)}
+          >
             {submitLabel()}
           </Button>
         </Field>

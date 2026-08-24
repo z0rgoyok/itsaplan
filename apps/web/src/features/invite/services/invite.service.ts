@@ -5,6 +5,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { signIn, signUp } from '@/lib/auth-client';
+import { authCaptchaFetchOptions } from '@/features/auth/services/auth.service';
 
 export function useInviteQuery(token: string) {
   return useQuery({
@@ -43,6 +44,7 @@ export async function registerAndAccept(input: {
   email: string;
   password: string;
   token: string;
+  captchaToken?: string;
   // What to say when better-auth reports no message of its own.
   registerFailed: string;
 }) {
@@ -50,6 +52,7 @@ export async function registerAndAccept(input: {
     email: input.email,
     password: input.password,
     name: input.email.split('@')[0] || input.email,
+    fetchOptions: authCaptchaFetchOptions(input.captchaToken),
   });
   if (result.error) {
     throw new InviteAuthError(result.error.message ?? input.registerFailed, result.error.code);
@@ -62,9 +65,14 @@ export async function registerAndAccept(input: {
 export async function signInForInvite(input: {
   email: string;
   password: string;
+  captchaToken?: string;
   signInFailed: string;
 }): Promise<void> {
-  const result = await signIn.email({ email: input.email, password: input.password });
+  const result = await signIn.email({
+    email: input.email,
+    password: input.password,
+    fetchOptions: authCaptchaFetchOptions(input.captchaToken),
+  });
   if (result.error) {
     throw new InviteAuthError(result.error.message ?? input.signInFailed, result.error.code);
   }

@@ -96,6 +96,8 @@ services:
       # email links); APP_URL is the web origin (CORS, passkey, email links).
       API_URL: ${API_URL:?public origin of the api, e.g. https://api.example.com}
       APP_URL: ${APP_URL:?public origin of the web app, e.g. https://app.example.com}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       # Set COOKIE_DOMAIN only to override the parent domain derived from
       # APP_URL (multi-label TLDs, deep subdomains).
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
@@ -167,6 +169,7 @@ services:
       dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${API_URL:?public origin of the api, e.g. https://api.example.com}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
         # Legal document URLs shown on the logged-out screens; empty hides the notice.
         NEXT_PUBLIC_PRIVACY_URL: ${PRIVACY_URL:-}
         NEXT_PUBLIC_TERMS_URL: ${TERMS_URL:-}

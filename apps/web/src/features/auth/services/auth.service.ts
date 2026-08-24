@@ -22,6 +22,9 @@ const appUrl = (path: string) =>
 // enough to tell it apart from wrong credentials and offer the link again.
 export class EmailNotConfirmedError extends Error {}
 
+export const authCaptchaFetchOptions = (token?: string) =>
+  token ? { headers: { 'x-captcha-response': token } } : undefined;
+
 // The sign-in screen has one field for two identifiers: an address goes to
 // /sign-in/email, anything else to /sign-in/username. An address is the only thing
 // that can carry an "@", so that is what tells them apart.
@@ -32,14 +35,23 @@ export function isEmailAddress(identifier: string): boolean {
 export async function signInWithPassword(input: {
   identifier: string;
   password: string;
+  captchaToken?: string;
 }): Promise<void> {
   const identifier = input.identifier.trim();
   const result = isEmailAddress(identifier)
-    ? await signIn.email({ email: identifier, password: input.password })
-    : await signIn.username({ username: identifier, password: input.password });
+    ? await signIn.email({
+        email: identifier,
+        password: input.password,
+        fetchOptions: authCaptchaFetchOptions(input.captchaToken),
+      })
+    : await signIn.username({
+        username: identifier,
+        password: input.password,
+        fetchOptions: authCaptchaFetchOptions(input.captchaToken),
+      });
   if (!result.error) return;
   const message = result.error.message ?? '';
-  if (result.error.status === 403) throw new EmailNotConfirmedError(message);
+  if (result.error.code === 'EMAIL_NOT_CONFIRMED') throw new EmailNotConfirmedError(message);
   throw new Error(message);
 }
 
@@ -49,11 +61,17 @@ export async function signInWithPassword(input: {
 //
 // On an invite-only instance the API rejects the sign-up unless the address has a
 // pending project invite, and the thrown message says so.
-export async function signUpWithEmail(input: { email: string; password: string }): Promise<void> {
+export async function signUpWithEmail(input: {
+  email: string;
+  password: string;
+  captchaToken?: string;
+}): Promise<void> {
   const result = await signUp.email({
-    ...input,
+    email: input.email,
+    password: input.password,
     name: input.email.split('@')[0] || input.email,
     callbackURL: appUrl('/login?verified=1'),
+    fetchOptions: authCaptchaFetchOptions(input.captchaToken),
   });
   if (result.error) throw new Error(result.error.message ?? '');
 }
@@ -64,10 +82,11 @@ export async function signUpWithEmail(input: { email: string; password: string }
 // The address is carried in redirectTo so the reset screen can sign the user in once
 // the new password is set: better-auth keeps the query it is given and adds its own
 // `token` to it.
-export async function sendPasswordResetEmail(email: string): Promise<void> {
+export async function sendPasswordResetEmail(email: string, captchaToken?: string): Promise<void> {
   const result = await requestPasswordReset({
     email,
     redirectTo: appUrl(`/reset-password?email=${encodeURIComponent(email)}`),
+    fetchOptions: authCaptchaFetchOptions(captchaToken),
   });
   if (result.error) throw new Error(result.error.message ?? '');
 }
