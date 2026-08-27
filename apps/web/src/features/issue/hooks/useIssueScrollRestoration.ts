@@ -1,4 +1,10 @@
-import { useLayoutEffect, useRef, type UIEventHandler } from 'react';
+import {
+  useLayoutEffect,
+  useRef,
+  type MouseEventHandler,
+  type PointerEventHandler,
+  type UIEventHandler,
+} from 'react';
 
 const SCROLL_SAVE_DELAY_MS = 100;
 
@@ -9,20 +15,29 @@ interface IssueScrollHistoryState {
   };
 }
 
+function isIssueNavigation(target: EventTarget) {
+  const link = target instanceof Element ? target.closest<HTMLAnchorElement>('a[href]') : null;
+  return link?.pathname.includes('/issue/') ?? false;
+}
+
 export function useIssueScrollRestoration(issuePathname: string | null) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const activeIssuePathnameRef = useRef<string | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
   const saveTimerRef = useRef<number | null>(null);
 
+  const clearPendingSave = () => {
+    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    pendingScrollTopRef.current = null;
+  };
+
   const saveScrollPosition = () => {
     const activeIssuePathname = activeIssuePathnameRef.current;
     const scrollTop = pendingScrollTopRef.current;
     if (activeIssuePathname == null || scrollTop == null) return;
 
-    if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = null;
-    pendingScrollTopRef.current = null;
+    clearPendingSave();
     window.history.replaceState(
       {
         ...window.history.state,
@@ -30,6 +45,12 @@ export function useIssueScrollRestoration(issuePathname: string | null) {
       },
       '',
     );
+  };
+
+  const saveCurrentScrollPosition = () => {
+    if (!scrollRef.current) return;
+    pendingScrollTopRef.current = scrollRef.current.scrollTop;
+    saveScrollPosition();
   };
 
   useLayoutEffect(() => {
@@ -53,9 +74,7 @@ export function useIssueScrollRestoration(issuePathname: string | null) {
     const frame = requestAnimationFrame(restore);
     return () => {
       cancelAnimationFrame(frame);
-      if (saveTimerRef.current != null) window.clearTimeout(saveTimerRef.current);
-      saveTimerRef.current = null;
-      pendingScrollTopRef.current = null;
+      clearPendingSave();
     };
   }, [issuePathname]);
 
@@ -65,5 +84,18 @@ export function useIssueScrollRestoration(issuePathname: string | null) {
     saveTimerRef.current = window.setTimeout(saveScrollPosition, SCROLL_SAVE_DELAY_MS);
   };
 
-  return { scrollRef, onScroll, saveScrollPosition };
+  const onPointerDownCapture: PointerEventHandler<HTMLDivElement> = (event) => {
+    if (isIssueNavigation(event.target)) saveCurrentScrollPosition();
+  };
+
+  const onClickCapture: MouseEventHandler<HTMLDivElement> = (event) => {
+    if (!isIssueNavigation(event.target)) return;
+    if (event.detail === 0) {
+      saveCurrentScrollPosition();
+      return;
+    }
+    clearPendingSave();
+  };
+
+  return { scrollRef, onScroll, onClickCapture, onPointerDownCapture };
 }

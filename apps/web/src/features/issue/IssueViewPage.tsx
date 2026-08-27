@@ -30,7 +30,8 @@ export default function IssueViewPage() {
   );
   const currentIssuePath =
     project && !Number.isNaN(seq) ? issuePath(project.project.key, seq) : null;
-  const { scrollRef, onScroll, saveScrollPosition } = useIssueScrollRestoration(currentIssuePath);
+  const { scrollRef, onScroll, onClickCapture, onPointerDownCapture } =
+    useIssueScrollRestoration(currentIssuePath);
 
   if (!project) return null;
 
@@ -38,7 +39,8 @@ export default function IssueViewPage() {
     <div
       ref={scrollRef}
       className="flex-1 overflow-y-auto"
-      onClickCapture={saveScrollPosition}
+      onClickCapture={onClickCapture}
+      onPointerDownCapture={onPointerDownCapture}
       onScroll={onScroll}
     >
       <div className="flex flex-col px-8 py-6 xl:px-12">
