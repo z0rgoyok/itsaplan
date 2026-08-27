@@ -5,6 +5,7 @@ import { useShell } from '@/context/shellContext';
 import { projectPath } from '@/utils/paths';
 import { useExitOnEscape } from '@/hooks/useExitOnEscape';
 import { useIssueBySeqQuery } from '@/services/issues.service';
+import { useIssueScrollRestoration } from './hooks/useIssueScrollRestoration';
 import IssueDetailContent from './components/detail/IssueDetailContent';
 import IssueDetailSkeleton from './components/detail/IssueDetailSkeleton';
 import { useTranslations } from 'next-intl';
@@ -27,11 +28,12 @@ export default function IssueViewPage() {
     project?.project.key ?? null,
     Number.isNaN(seq) ? null : seq,
   );
+  const { scrollRef, onScroll } = useIssueScrollRestoration(issueQuery.data?.id ?? null);
 
   if (!project) return null;
 
   return (
-    <div className="flex-1 overflow-y-auto">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto" onScroll={onScroll}>
       <div className="flex flex-col px-8 py-6 xl:px-12">
         {issueQuery.data ? (
           <IssueDetailContent
