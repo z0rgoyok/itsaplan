@@ -39,5 +39,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             release-assets/itsaplan-runner.tgz \
             --verify-tag \
+            --target "$GITHUB_SHA" \
             --title "Runner ${GITHUB_REF_NAME#runner-v}" \
             --notes "Runner built from $GITHUB_SHA for the neiro production branch."
