@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useShell } from '@/context/shellContext';
-import { projectPath } from '@/utils/paths';
+import { issuePath, projectPath } from '@/utils/paths';
 import { useExitOnEscape } from '@/hooks/useExitOnEscape';
 import { useIssueBySeqQuery } from '@/services/issues.service';
 import { useIssueScrollRestoration } from './hooks/useIssueScrollRestoration';
@@ -28,7 +28,9 @@ export default function IssueViewPage() {
     project?.project.key ?? null,
     Number.isNaN(seq) ? null : seq,
   );
-  const { scrollRef, onScroll } = useIssueScrollRestoration(issueQuery.data?.id ?? null);
+  const currentIssuePath =
+    project && !Number.isNaN(seq) ? issuePath(project.project.key, seq) : null;
+  const { scrollRef, onScroll } = useIssueScrollRestoration(currentIssuePath);
 
   if (!project) return null;
 
