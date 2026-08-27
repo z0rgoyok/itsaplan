@@ -1,34 +1,48 @@
-import { useLayoutEffect, useRef, type UIEventHandler } from 'react';
+import { useEffect, useLayoutEffect, useRef, type UIEventHandler } from 'react';
 
-const HISTORY_ENTRY_KEY = 'itsaplanIssueScrollEntry';
-const scrollPositionsByEntry = new Map<string, number>();
-
-type IssueScrollHistoryState = {
-  [HISTORY_ENTRY_KEY]?: unknown;
-};
-
-function currentHistoryEntryKey() {
-  const state = window.history.state as IssueScrollHistoryState | null;
-  const existingKey = state?.[HISTORY_ENTRY_KEY];
-  if (typeof existingKey === 'string') return existingKey;
-
-  const key = crypto.randomUUID();
-  window.history.replaceState({ ...(state ?? {}), [HISTORY_ENTRY_KEY]: key }, '');
-  return key;
-}
+const scrollPositionsByIssue = new Map<number, number>();
+let historyNavigationPathname: string | null = null;
 
 export function useIssueScrollRestoration(issueId: number | null) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeIssueIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const markHistoryNavigation = () => {
+      historyNavigationPathname = window.location.pathname;
+    };
+
+    window.addEventListener('popstate', markHistoryNavigation);
+    return () => window.removeEventListener('popstate', markHistoryNavigation);
+  }, []);
 
   useLayoutEffect(() => {
-    if (issueId == null) return;
+    if (issueId == null) {
+      activeIssueIdRef.current = null;
+      return;
+    }
 
-    const key = currentHistoryEntryKey();
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollPositionsByEntry.get(key) ?? 0;
+    const shouldRestore = historyNavigationPathname === window.location.pathname;
+    historyNavigationPathname = null;
+    const scrollTop = shouldRestore ? (scrollPositionsByIssue.get(issueId) ?? 0) : 0;
+    activeIssueIdRef.current = issueId;
+
+    const restore = () => {
+      if (activeIssueIdRef.current === issueId && scrollRef.current) {
+        scrollRef.current.scrollTop = scrollTop;
+      }
+    };
+
+    restore();
+    const frame = requestAnimationFrame(restore);
+    return () => cancelAnimationFrame(frame);
   }, [issueId]);
 
   const onScroll: UIEventHandler<HTMLDivElement> = (event) => {
-    scrollPositionsByEntry.set(currentHistoryEntryKey(), event.currentTarget.scrollTop);
+    const activeIssueId = activeIssueIdRef.current;
+    if (activeIssueId != null) {
+      scrollPositionsByIssue.set(activeIssueId, event.currentTarget.scrollTop);
+    }
   };
 
   return { scrollRef, onScroll };
