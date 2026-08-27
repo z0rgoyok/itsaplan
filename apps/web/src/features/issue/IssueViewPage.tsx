@@ -38,7 +38,7 @@ export default function IssueViewPage() {
   return (
     <div
       ref={scrollRef}
-      className="flex-1 overflow-y-auto"
+      className="flex-1 overflow-y-auto [overflow-anchor:none]"
       onClickCapture={onClickCapture}
       onPointerDownCapture={onPointerDownCapture}
       onScroll={onScroll}
