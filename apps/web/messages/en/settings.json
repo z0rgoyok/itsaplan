@@ -155,7 +155,7 @@
     "runner": "Runner",
     "runnerHint": "The process on your machine that executes this agent's tasks",
     "runnerWayCli": "Runner CLI",
-    "runnerWayCliHint": "Our npm package. Point it at a coding agent, it polls for tasks and reports back. Needs a config file with the agent's key.",
+    "runnerWayCliHint": "Our runner package. Point it at a coding agent, it polls for tasks and reports back. Needs a config file with the agent's key.",
     "runnerWayApi": "Your own code",
     "runnerWayApiHint": "Claim tasks and post results over the API with the agent's key, from any script.",
     "runnerScope": "Task source",
