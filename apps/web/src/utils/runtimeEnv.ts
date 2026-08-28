@@ -7,6 +7,7 @@ export interface RuntimeEnv {
   apiUrl: string;
   privacyUrl: string;
   termsUrl: string;
+  turnstileSiteKey: string;
 }
 
 declare global {
@@ -28,10 +29,18 @@ export function serverRuntimeEnv(): RuntimeEnv {
     apiUrl: readOrigin('API_URL'),
     privacyUrl: readOrigin('PRIVACY_URL'),
     termsUrl: readOrigin('TERMS_URL'),
+    turnstileSiteKey: readOrigin('TURNSTILE_SITE_KEY'),
   };
 }
 
 export function runtimeEnv(): RuntimeEnv {
   if (typeof window === 'undefined') return serverRuntimeEnv();
-  return window.__ITSAPLAN_ENV__ ?? { apiUrl: '', privacyUrl: '', termsUrl: '' };
+  return (
+    window.__ITSAPLAN_ENV__ ?? {
+      apiUrl: '',
+      privacyUrl: '',
+      termsUrl: '',
+      turnstileSiteKey: '',
+    }
+  );
 }

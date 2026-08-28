@@ -178,6 +178,7 @@ services:
       HOSTNAME: 0.0.0.0
       # The api origin the browser uses.
       API_URL: ${API_URL:?public origin of the api, e.g. https://api.example.com}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       # Where web itself reaches the api: it streams avatars and attachments from
       # there (/media) so they are served from the web origin.
       SERVICE_URL_API: http://api:3000

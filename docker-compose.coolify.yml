@@ -186,6 +186,7 @@ services:
       # web reaches the api at the same address to stream avatars and attachments
       # (/media), so they are served from the web origin.
       API_URL: ${SERVICE_URL_API:-http://localhost:3000}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       SERVICE_URL_API: ${SERVICE_URL_API:-http://api:3000}
       # Legal document URLs shown on the logged-out screens; empty hides the notice.
       PRIVACY_URL: ${PRIVACY_URL:-}

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, neiro]
   pull_request:
 
 # A new push to a pull request cancels the run still in flight for it.

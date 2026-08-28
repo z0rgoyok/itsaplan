@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { projectPath } from '@/utils/paths';
@@ -12,6 +12,10 @@ import {
   registerAndAccept,
   signInForInvite,
 } from '../services/invite.service';
+import AuthTurnstile, {
+  authCaptchaEnabled,
+  type AuthTurnstileHandle,
+} from '@/features/auth/components/AuthTurnstile';
 
 type Mode = 'register' | 'signin';
 
@@ -33,6 +37,8 @@ export default function InviteAuthForm({
   const [mode, setMode] = useState<Mode>(hasAccount ? 'signin' : 'register');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [captchaToken, setCaptchaToken] = useState('');
+  const captchaRef = useRef<AuthTurnstileHandle>(null);
   const [error, setError] = useState<string | null>(null);
   // A neutral note (not an error) — e.g. when we switch a registration to sign-in
   // because the invited email already has an account.
@@ -62,12 +68,18 @@ export default function InviteAuthForm({
           email,
           password,
           token,
+          captchaToken,
           registerFailed: t('registerFailed'),
         });
         router.push(projectPath(result.projectKey));
         router.refresh();
       } else {
-        await signInForInvite({ email, password, signInFailed: t('signInFailed') });
+        await signInForInvite({
+          email,
+          password,
+          captchaToken,
+          signInFailed: t('signInFailed'),
+        });
         router.refresh();
       }
     } catch (err) {
@@ -80,6 +92,8 @@ export default function InviteAuthForm({
         setError(err instanceof Error ? err.message : t('genericError'));
       }
       setPending(false);
+    } finally {
+      captchaRef.current?.reset();
     }
   }
 
@@ -133,8 +147,10 @@ export default function InviteAuthForm({
         {notice && <FieldDescription className="text-foreground">{notice}</FieldDescription>}
         {error && <FieldError>{error}</FieldError>}
 
+        <AuthTurnstile ref={captchaRef} onTokenChange={setCaptchaToken} />
+
         <Field>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending || (authCaptchaEnabled && !captchaToken)}>
             {submitLabel}
           </Button>
         </Field>

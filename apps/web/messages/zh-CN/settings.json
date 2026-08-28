@@ -155,7 +155,7 @@
     "runner": "运行器",
     "runnerHint": "在你的机器上执行该智能体任务的进程",
     "runnerWayCli": "Runner CLI",
-    "runnerWayCliHint": "我们的 npm 包。指向一个编码智能体，它会领取任务并回传结果。需要一个包含智能体密钥的配置文件。",
+    "runnerWayCliHint": "我们的运行器包。指向一个编码智能体，它会领取任务并回传结果。需要一个包含智能体密钥的配置文件。",
     "runnerWayApi": "你自己的代码",
     "runnerWayApiHint": "用智能体密钥通过 API 领取任务并提交结果，任何脚本都可以。",
     "runnerScope": "任务来源",

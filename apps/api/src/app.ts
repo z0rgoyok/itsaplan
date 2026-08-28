@@ -25,7 +25,7 @@ export const app = new Elysia()
       origin: trustedOrigins,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'x-captcha-response'],
     }),
   )
   // OpenAPI docs. Mounted on the main app (outside the planner's session guard)
