@@ -20,6 +20,7 @@ import { StateIcon } from '../shared/IssueIcons';
 export default function IssueRefRow({
   project,
   issue,
+  scrollAnchorKey,
   removeLabel,
   onRemove,
   onOpen,
@@ -27,6 +28,7 @@ export default function IssueRefRow({
 }: {
   project: ProjectDetail;
   issue: IssueRef;
+  scrollAnchorKey: string;
   removeLabel: string;
   onRemove?: () => void;
   onOpen?: () => void;
@@ -52,7 +54,7 @@ export default function IssueRefRow({
     return (
       <Link
         {...historyScrollRestorationLinkProps}
-        {...historyScrollRestorationAnchorProps(issue.id)}
+        {...historyScrollRestorationAnchorProps(scrollAnchorKey)}
         href={issuePath(project.project.key, issue.sequenceNumber)}
         className={labelClass}
       >

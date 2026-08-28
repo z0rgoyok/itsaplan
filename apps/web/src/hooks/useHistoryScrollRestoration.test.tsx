@@ -11,7 +11,6 @@ interface SavedScrollPosition {
   scrollTop: number;
   anchor?: {
     key: string;
-    index: number;
     offsetTop: number;
   };
 }
@@ -34,6 +33,7 @@ const replacedGlobals = [
   'Element',
   'HTMLElement',
   'Event',
+  'MouseEvent',
   'ResizeObserver',
   'requestAnimationFrame',
   'cancelAnimationFrame',
@@ -47,16 +47,24 @@ let anchorContentTop: number;
 let resizeObservers: ResizeObserverHarness[];
 let originalGlobalDescriptors: Map<string, PropertyDescriptor | undefined>;
 
-function ScrollContainer({ pathname }: { pathname: string }) {
+function ScrollContainer({
+  pathname,
+  anchorKey = 'subtask:4',
+}: {
+  pathname: string;
+  anchorKey?: string | null;
+}) {
   const restorationProps = useHistoryScrollRestoration({ pathname });
 
   return (
     <div data-testid="scroll-container" {...restorationProps}>
       <div>
         Content
-        <button type="button" data-history-scroll-restoration-anchor="subtask-4">
-          Subtask
-        </button>
+        {anchorKey && (
+          <button type="button" data-history-scroll-restoration-anchor={anchorKey}>
+            Subtask
+          </button>
+        )}
       </div>
     </div>
   );
@@ -68,8 +76,8 @@ function currentPosition(): SavedScrollPosition {
   return state.__itsaplanScrollRestoration;
 }
 
-function render(pathname: string): HTMLDivElement {
-  act(() => root.render(<ScrollContainer pathname={pathname} />));
+function render(pathname: string, anchorKey?: string | null): HTMLDivElement {
+  act(() => root.render(<ScrollContainer pathname={pathname} anchorKey={anchorKey} />));
   const container = document.querySelector<HTMLDivElement>('[data-testid="scroll-container"]');
   assert.ok(container);
   return container;
@@ -77,6 +85,10 @@ function render(pathname: string): HTMLDivElement {
 
 function dispatch(target: HTMLElement, type: string) {
   act(() => target.dispatchEvent(new window.Event(type, { bubbles: true })));
+}
+
+function click(target: HTMLElement) {
+  act(() => target.dispatchEvent(new window.MouseEvent('click', { bubbles: true, detail: 1 })));
 }
 
 beforeEach(async () => {
@@ -146,6 +158,7 @@ beforeEach(async () => {
     Element: { configurable: true, value: dom.window.Element },
     HTMLElement: { configurable: true, value: dom.window.HTMLElement },
     Event: { configurable: true, value: dom.window.Event },
+    MouseEvent: { configurable: true, value: dom.window.MouseEvent },
     ResizeObserver: { configurable: true, value: TestResizeObserver },
     requestAnimationFrame: {
       configurable: true,
@@ -224,7 +237,7 @@ describe('useHistoryScrollRestoration', () => {
   it('keeps the activated anchor in place while content above it changes height', () => {
     const container = render(parentPath);
     const anchor = container.querySelector<HTMLElement>(
-      '[data-history-scroll-restoration-anchor="subtask-4"]',
+      '[data-history-scroll-restoration-anchor="subtask:4"]',
     );
     assert.ok(anchor);
 
@@ -232,7 +245,7 @@ describe('useHistoryScrollRestoration', () => {
     dispatch(container, 'scroll');
     dispatch(anchor, 'pointerdown');
     const parentState = window.history.state;
-    assert.deepEqual(currentPosition().anchor, { key: 'subtask-4', index: 0, offsetTop: 300 });
+    assert.deepEqual(currentPosition().anchor, { key: 'subtask:4', offsetTop: 300 });
 
     act(() => {
       window.history.pushState({}, '', childPath);
@@ -260,6 +273,86 @@ describe('useHistoryScrollRestoration', () => {
     anchorContentTop += 80;
     act(() => observer.trigger());
     assert.equal(container.scrollTop, 1900);
+  });
+
+  it('captures the final anchor position after momentum scroll between pointerdown and click', async () => {
+    const container = render(parentPath);
+    const anchor = container.querySelector<HTMLElement>(
+      '[data-history-scroll-restoration-anchor="subtask:4"]',
+    );
+    assert.ok(anchor);
+
+    container.scrollTop = 1800;
+    dispatch(container, 'scroll');
+    dispatch(anchor, 'pointerdown');
+
+    container.scrollTop = 1860;
+    dispatch(container, 'scroll');
+    click(anchor);
+
+    assert.deepEqual(currentPosition().anchor, { key: 'subtask:4', offsetTop: 240 });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.deepEqual(currentPosition().anchor, { key: 'subtask:4', offsetTop: 240 });
+  });
+
+  it('does not reapply the absolute fallback after it has been reached without the anchor', () => {
+    const container = render(parentPath);
+    const anchor = container.querySelector<HTMLElement>(
+      '[data-history-scroll-restoration-anchor="subtask:4"]',
+    );
+    assert.ok(anchor);
+
+    container.scrollTop = 1800;
+    dispatch(container, 'scroll');
+    dispatch(anchor, 'pointerdown');
+    const parentState = window.history.state;
+
+    act(() => {
+      window.history.pushState({}, '', childPath);
+      root.render(<ScrollContainer pathname={childPath} />);
+    });
+    act(() => {
+      window.history.replaceState(parentState, '', parentPath);
+      root.render(<ScrollContainer pathname={parentPath} anchorKey={null} />);
+    });
+    assert.equal(container.scrollTop, 1800);
+
+    container.scrollTop = 1700;
+    const observer = resizeObservers.at(-1);
+    assert.ok(observer);
+    act(() => observer.trigger());
+
+    assert.equal(container.scrollTop, 1700);
+    assert.equal(observer.disconnected, false);
+  });
+
+  it('stops restoration when an anchor that was restored disappears', () => {
+    const container = render(parentPath);
+    const anchor = container.querySelector<HTMLElement>(
+      '[data-history-scroll-restoration-anchor="subtask:4"]',
+    );
+    assert.ok(anchor);
+
+    container.scrollTop = 1800;
+    dispatch(container, 'scroll');
+    dispatch(anchor, 'pointerdown');
+    const parentState = window.history.state;
+
+    act(() => {
+      window.history.pushState({}, '', childPath);
+      root.render(<ScrollContainer pathname={childPath} />);
+    });
+    act(() => {
+      window.history.replaceState(parentState, '', parentPath);
+      root.render(<ScrollContainer pathname={parentPath} />);
+    });
+
+    const observer = resizeObservers.at(-1);
+    assert.ok(observer);
+    act(() => root.render(<ScrollContainer pathname={parentPath} anchorKey={null} />));
+    act(() => observer.trigger());
+
+    assert.equal(observer.disconnected, true);
   });
 
   it('cancels a pending restoration when the user scrolls', () => {

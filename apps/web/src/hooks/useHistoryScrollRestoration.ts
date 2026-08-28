@@ -17,13 +17,12 @@ let nextHistoryEntryId = 0;
 
 export const historyScrollRestorationLinkProps = { scroll: false } as const;
 
-export function historyScrollRestorationAnchorProps(key: string | number) {
-  return { [SCROLL_ANCHOR_ATTRIBUTE]: String(key) };
+export function historyScrollRestorationAnchorProps(key: string) {
+  return { [SCROLL_ANCHOR_ATTRIBUTE]: key };
 }
 
 interface ScrollRestorationAnchor {
   key: string;
-  index: number;
   offsetTop: number;
 }
 
@@ -50,8 +49,8 @@ interface ScrollRestorationProps<T extends HTMLElement> {
   onPointerDownCapture: PointerEventHandler<T>;
 }
 
-function anchorElements(container: HTMLElement, key: string): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(`[${SCROLL_ANCHOR_ATTRIBUTE}]`)).filter(
+function findAnchorElement(container: HTMLElement, key: string) {
+  return Array.from(container.querySelectorAll<HTMLElement>(`[${SCROLL_ANCHOR_ATTRIBUTE}]`)).find(
     (element) => element.getAttribute(SCROLL_ANCHOR_ATTRIBUTE) === key,
   );
 }
@@ -62,11 +61,8 @@ function captureAnchor(container: HTMLElement, target: EventTarget | null) {
   if (!(element instanceof HTMLElement) || !container.contains(element)) return undefined;
   const key = element.getAttribute(SCROLL_ANCHOR_ATTRIBUTE);
   if (!key) return undefined;
-  const index = anchorElements(container, key).indexOf(element);
-  if (index < 0) return undefined;
   return {
     key,
-    index,
     offsetTop: element.getBoundingClientRect().top - container.getBoundingClientRect().top,
   };
 }
@@ -77,9 +73,6 @@ function validAnchor(value: unknown): value is ScrollRestorationAnchor {
   return (
     typeof anchor.key === 'string' &&
     anchor.key.length > 0 &&
-    typeof anchor.index === 'number' &&
-    Number.isInteger(anchor.index) &&
-    anchor.index >= 0 &&
     typeof anchor.offsetTop === 'number' &&
     Number.isFinite(anchor.offsetTop)
   );
@@ -188,6 +181,8 @@ export function useHistoryScrollRestoration<T extends HTMLElement = HTMLDivEleme
       ...(anchor ? { anchor } : {}),
     });
 
+    let absoluteScrollRestored = false;
+    let anchorWasFound = false;
     const restore = () => {
       if (
         isRestoringRef.current &&
@@ -196,19 +191,13 @@ export function useHistoryScrollRestoration<T extends HTMLElement = HTMLDivEleme
         scrollRef.current
       ) {
         const container = scrollRef.current;
-        const anchorElement = anchor
-          ? anchorElements(container, anchor.key)[anchor.index]
-          : undefined;
+        const anchorElement = anchor ? findAnchorElement(container, anchor.key) : undefined;
         if (anchor && anchorElement) {
+          anchorWasFound = true;
           const currentOffset =
             anchorElement.getBoundingClientRect().top - container.getBoundingClientRect().top;
           container.scrollTop += currentOffset - anchor.offsetTop;
-        } else {
-          container.scrollTop = scrollTop;
-        }
-        restoredScrollTopRef.current = container.scrollTop;
-
-        if (anchor) {
+          restoredScrollTopRef.current = container.scrollTop;
           scrollPositions.set(entryId, container.scrollTop);
           const currentState = window.history.state as ScrollRestorationHistoryState | null;
           if (
@@ -222,8 +211,15 @@ export function useHistoryScrollRestoration<T extends HTMLElement = HTMLDivEleme
               anchor,
             });
           }
-        } else if (Math.abs(container.scrollTop - scrollTop) < 1) {
+        } else if (anchorWasFound) {
           stopRestoration();
+        } else if (!absoluteScrollRestored) {
+          container.scrollTop = scrollTop;
+          restoredScrollTopRef.current = container.scrollTop;
+          if (Math.abs(container.scrollTop - scrollTop) < 1) {
+            absoluteScrollRestored = true;
+            if (!anchor) stopRestoration();
+          }
         }
       }
     };
@@ -265,9 +261,7 @@ export function useHistoryScrollRestoration<T extends HTMLElement = HTMLDivEleme
 
   const onPointerDownCapture: PointerEventHandler<T> = (event) =>
     saveCurrentScrollPosition(event.target);
-  const onClickCapture: MouseEventHandler<T> = (event) => {
-    if (event.detail === 0) saveCurrentScrollPosition(event.target);
-  };
+  const onClickCapture: MouseEventHandler<T> = (event) => saveCurrentScrollPosition(event.target);
 
   return {
     ref: scrollRef,
