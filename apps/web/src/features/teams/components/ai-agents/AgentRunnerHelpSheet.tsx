@@ -153,7 +153,7 @@ function configFile(preset: {
 }
 
 export const RUN_COMMAND =
-  'npx -y --package=https://github.com/z0rgoyok/itsaplan/releases/download/runner-v0.4.0-neiro.1/itsaplan-runner.tgz itsaplan-runner';
+  'npx -y --package=https://github.com/z0rgoyok/itsaplan/releases/download/runner-v0.5.0-neiro.1/itsaplan-runner.tgz itsaplan-runner';
 
 export function AgentRunnerHelpSheet() {
   const t = useTranslations('teams.agents');
