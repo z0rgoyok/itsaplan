@@ -25,6 +25,11 @@ export const notesPath = (key: string) => `${projectPath(key)}/notes`;
 
 export const notePath = (key: string, boardId: number) => `${notesPath(key)}/${boardId}`;
 
+export const documentsPath = (key: string) => `${projectPath(key)}/docs`;
+
+export const documentPath = (key: string, documentId: number) =>
+  `${documentsPath(key)}/${documentId}`;
+
 export const settingsPath = (key: string, section: string) =>
   `${projectPath(key)}/settings/${section}`;
 
@@ -40,30 +45,11 @@ export const notificationsPath = (key: string) => `${projectPath(key)}/notificat
 
 export const aiAgentsPath = (key: string) => `${projectPath(key)}/ai-agents`;
 
-export const integrationsPath = (key: string) => `${projectPath(key)}/integrations`;
-
-export const agentSkillsPath = (key: string) => `${projectPath(key)}/agent-skills`;
-
-export const agentToolsPath = (key: string) => `${projectPath(key)}/agent-tools`;
-
-// The AI configuration sections (see AI_SECTIONS) keyed by slug. Each is its own
-// top-level route rather than a /settings/:slug page.
-const AI_SECTION_PATH: Record<string, (key: string) => string> = {
-  'ai-agents': aiAgentsPath,
-  integrations: integrationsPath,
-  'agent-skills': agentSkillsPath,
-  'agent-tools': agentToolsPath,
-};
-
-export const aiSectionPath = (key: string, slug: string) => AI_SECTION_PATH[slug](key);
-
 export const mcpServerPath = (key: string) => `${projectPath(key)}/mcp`;
 
 export const apiDocsPath = (key: string) => `${projectPath(key)}/api`;
 
 export const membersPath = (key: string) => `${projectPath(key)}/members`;
-
-export const rolesPath = (key: string) => `${projectPath(key)}/members/roles`;
 
 // Issues are addressed in the URL by their project-scoped number (the "42" in
 // "MKT-42"), not the internal database id: /project/MKT/issue/42.
@@ -132,10 +118,29 @@ export const startPagePath = (key: string, startPage: StartPage) => {
   }
 };
 
-// The standalone Manage projects page (outside the project shell), reached from
-// the project switcher. Lists every project the user belongs to and lets an owner
-// delete one.
-export const manageProjectsPath = () => '/account/projects';
+// The standalone Manage teams page, reached from the project switcher. Lists the
+// teams the user belongs to and opens one beside the list; with no team in the URL
+// it redirects to the first of them.
+export const manageTeamsPath = () => '/account/teams';
+
+// Every section of a team is a route of its own, so each loads only what it shows.
+// The team itself is the index of the team, so it carries no section segment.
+export type TeamSection =
+  | 'info'
+  | 'projects'
+  | 'members'
+  | 'roles'
+  | 'integrations'
+  | 'mcp'
+  | 'ai-agents'
+  | 'agent-skills'
+  | 'agent-tools'
+  | 'notifications';
+
+export const teamPath = (teamId: number) => `${manageTeamsPath()}/${teamId}`;
+
+export const teamSectionPath = (teamId: number, section: TeamSection) =>
+  section === 'info' ? teamPath(teamId) : `${teamPath(teamId)}/${section}`;
 
 // The invitee-facing link an owner shares. Points at this web app's public
 // /invite/:token page, which reads the token and shows the accept screen.

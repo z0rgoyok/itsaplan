@@ -1,14 +1,21 @@
 import {
   db,
+  chatAttachment,
+  documentAsset,
+  issue,
+  issueAttachment,
   issueType,
   project,
   projectColumn,
   projectMember,
-  projectRole,
+  projectDocument,
+  teamRole,
   projectSetting,
+  team,
+  teamMember,
 } from '@repo/db';
-import { and, eq } from 'drizzle-orm';
-import { iso } from '#shared/lib';
+import { and, eq, getTableColumns } from 'drizzle-orm';
+import { HttpError, iso } from '#shared/lib';
 import {
   defaultMemberPermissions,
   fullPermissions,
@@ -16,8 +23,13 @@ import {
   type Permissions,
 } from '#shared/permissions';
 import { getProjectSetting, setProjectSetting } from '#shared/project-settings';
+import { PROJECT_FEATURES, featureLabel, type ProjectFeature } from '#shared/features';
+import { getLimits } from '#shared/limits';
 import { deleteThreadsWhere } from '#modules/agents/core/runtime/memory';
 import { getProjectDefaults } from '#modules/settings/service';
+import { dropUnusedTeamMembership } from '#modules/scim/reconcile';
+import { deleteObjects } from '#shared/s3';
+import { lockAttachmentStorage } from '#modules/attachments/storage';
 
 // Data access for projects: the top-level container that groups its own columns,
 // issue types, labels, assignees, custom fields, issues, saved views, and
@@ -26,12 +38,18 @@ import { getProjectDefaults } from '#modules/settings/service';
 
 export interface ProjectRow {
   id: number;
+  teamId: number;
+  teamName: string;
   key: string;
   name: string;
   description: string;
   mcpEnabled: boolean;
+  // The team's own MCP switch, carried here because every MCP gate is a project
+  // gate: a project is reachable only while both flags are on.
+  teamMcpEnabled: boolean;
   initiativesEnabled: boolean;
   dashboardsEnabled: boolean;
+  documentsEnabled: boolean;
   notesEnabled: boolean;
   cyclesEnabled: boolean;
   subtasksEnabled: boolean;
@@ -40,6 +58,10 @@ export interface ProjectRow {
   pointsEstimateEnabled: boolean;
   timeEstimateEnabled: boolean;
   timeLoggingEnabled: boolean;
+  // The sections this project may use at all. A section missing here is blocked for
+  // the team that owns the project: its flag above reads as off and the settings page
+  // does not offer it.
+  availableFeatures: ProjectFeature[];
   createdAt: string;
 }
 
@@ -48,6 +70,7 @@ export interface ProjectRow {
 export interface ProjectFeatures {
   initiatives: boolean;
   dashboards: boolean;
+  documents: boolean;
   notes: boolean;
   cycles: boolean;
   subtasks: boolean;
@@ -65,87 +88,147 @@ export interface ProjectListItem extends ProjectRow {
   permissions?: Permissions;
 }
 
-function mapProject(row: typeof project.$inferSelect): ProjectRow {
+type ProjectWithTeam = typeof project.$inferSelect & { teamName: string; teamMcpEnabled: boolean };
+
+const projectWithTeam = {
+  ...getTableColumns(project),
+  teamName: team.name,
+  teamMcpEnabled: team.mcpEnabled,
+};
+
+// A blocked section reads as off whatever the project has stored, so masking here is
+// what turns a feature off everywhere: the web app reads the flags off this DTO, and
+// the route guards read them off the project the guard resolved.
+export async function mapProject(row: ProjectWithTeam): Promise<ProjectRow> {
+  const { blockedFeatures } = await getLimits({ teamId: row.teamId });
+  const on = (feature: ProjectFeature, stored: boolean) =>
+    stored && !blockedFeatures.includes(feature);
   return {
     id: row.id,
+    teamId: row.teamId,
+    teamName: row.teamName,
     key: row.key,
     name: row.name,
     description: row.description,
     mcpEnabled: row.mcpEnabled,
-    initiativesEnabled: row.initiativesEnabled,
-    dashboardsEnabled: row.dashboardsEnabled,
-    notesEnabled: row.notesEnabled,
-    cyclesEnabled: row.cyclesEnabled,
-    subtasksEnabled: row.subtasksEnabled,
-    checklistsEnabled: row.checklistsEnabled,
-    issueStatsEnabled: row.issueStatsEnabled,
+    teamMcpEnabled: row.teamMcpEnabled,
+    initiativesEnabled: on('initiatives', row.initiativesEnabled),
+    dashboardsEnabled: on('dashboards', row.dashboardsEnabled),
+    documentsEnabled: on('documents', row.documentsEnabled),
+    notesEnabled: on('notes', row.notesEnabled),
+    cyclesEnabled: on('cycles', row.cyclesEnabled),
+    subtasksEnabled: on('subtasks', row.subtasksEnabled),
+    checklistsEnabled: on('checklists', row.checklistsEnabled),
+    issueStatsEnabled: on('issueStats', row.issueStatsEnabled),
     pointsEstimateEnabled: row.pointsEstimateEnabled,
     timeEstimateEnabled: row.timeEstimateEnabled,
     timeLoggingEnabled: row.timeLoggingEnabled,
+    availableFeatures: PROJECT_FEATURES.filter((feature) => !blockedFeatures.includes(feature)),
     createdAt: iso(row.createdAt),
   };
 }
 
 // Only the projects the user is a member of, ordered by key. Each carries the
-// caller's role in that project (owner | member). When mcpOnly is set, projects
-// with MCP disabled are excluded, so an MCP caller only sees projects it can work
-// with.
+// caller's role in that project (owner | member). When mcpOnly is set, projects out
+// of their team's MCP reach are excluded, so an MCP caller only sees projects it can
+// work with.
 export async function listProjects(
   userId: string,
   opts: { mcpOnly?: boolean; withPermissions?: boolean } = {},
 ): Promise<ProjectListItem[]> {
   const where = opts.mcpOnly
-    ? and(eq(projectMember.userId, userId), eq(project.mcpEnabled, true))
+    ? and(eq(projectMember.userId, userId), eq(project.mcpEnabled, true), eq(team.mcpEnabled, true))
     : eq(projectMember.userId, userId);
   const rows = await db
     .select({
-      id: project.id,
-      key: project.key,
-      name: project.name,
-      description: project.description,
-      mcpEnabled: project.mcpEnabled,
-      initiativesEnabled: project.initiativesEnabled,
-      dashboardsEnabled: project.dashboardsEnabled,
-      notesEnabled: project.notesEnabled,
-      cyclesEnabled: project.cyclesEnabled,
-      subtasksEnabled: project.subtasksEnabled,
-      checklistsEnabled: project.checklistsEnabled,
-      issueStatsEnabled: project.issueStatsEnabled,
-      pointsEstimateEnabled: project.pointsEstimateEnabled,
-      timeEstimateEnabled: project.timeEstimateEnabled,
-      timeLoggingEnabled: project.timeLoggingEnabled,
-      createdAt: project.createdAt,
-      role: projectMember.role,
-      rolePermissions: projectRole.permissions,
+      ...projectWithTeam,
+      memberRole: projectMember.role,
+      rolePermissions: teamRole.permissions,
     })
     .from(project)
+    .innerJoin(team, eq(team.id, project.teamId))
     .innerJoin(projectMember, eq(projectMember.projectId, project.id))
-    .leftJoin(projectRole, eq(projectRole.id, projectMember.roleId))
+    .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
     .where(where)
     .orderBy(project.key);
-  return rows.map(({ rolePermissions, ...r }) => {
-    const role = r.role === 'owner' ? 'owner' : 'member';
-    const item: ProjectListItem = { ...r, createdAt: iso(r.createdAt), role };
-    if (opts.withPermissions) {
-      item.permissions =
-        role === 'owner'
-          ? fullPermissions()
-          : rolePermissions
-            ? normalizePermissions(rolePermissions)
-            : defaultMemberPermissions();
-    }
-    return item;
-  });
+  return Promise.all(
+    rows.map(async ({ memberRole, rolePermissions, ...row }) => {
+      const role = memberRole === 'owner' ? 'owner' : 'member';
+      const item: ProjectListItem = { ...(await mapProject(row)), role };
+      if (opts.withPermissions) {
+        item.permissions =
+          role === 'owner'
+            ? fullPermissions()
+            : rolePermissions
+              ? normalizePermissions(rolePermissions)
+              : defaultMemberPermissions();
+      }
+      return item;
+    }),
+  );
 }
 
 export async function getProjectByKey(key: string): Promise<ProjectRow | null> {
-  const rows = await db.select().from(project).where(eq(project.key, key));
+  const rows = await db
+    .select(projectWithTeam)
+    .from(project)
+    .innerJoin(team, eq(team.id, project.teamId))
+    .where(eq(project.key, key));
   return rows[0] ? mapProject(rows[0]) : null;
 }
 
 export async function getProjectById(id: number): Promise<ProjectRow | null> {
-  const rows = await db.select().from(project).where(eq(project.id, id));
+  const rows = await db
+    .select(projectWithTeam)
+    .from(project)
+    .innerJoin(team, eq(team.id, project.teamId))
+    .where(eq(project.id, id));
   return rows[0] ? mapProject(rows[0]) : null;
+}
+
+// The team that owns a project, for the resources the team holds on behalf of all of
+// them (integration credentials, notification providers). Throws 404 for an unknown
+// project.
+export async function getProjectTeamId(projectId: number): Promise<number> {
+  const rows = await db
+    .select({ teamId: project.teamId })
+    .from(project)
+    .where(eq(project.id, projectId));
+  if (!rows[0]) throw new HttpError(404, 'Project not found');
+  return rows[0].teamId;
+}
+
+// The team a new project belongs to. `teamId` names it explicitly (the caller's
+// rank in it is checked by the route); without one it is the team the caller owns.
+export async function targetTeam(userId: string, teamId?: number): Promise<TargetTeam> {
+  if (teamId == null) return ownedTeam(userId);
+  const [row] = await db
+    .select({ id: team.id, name: team.name, mcpEnabled: team.mcpEnabled })
+    .from(team)
+    .where(eq(team.id, teamId));
+  if (!row) throw new HttpError(404, 'Team not found');
+  return row;
+}
+
+// The team a project is created in, with what mapProject needs from it.
+export interface TargetTeam {
+  id: number;
+  name: string;
+  mcpEnabled: boolean;
+}
+
+// The team the caller owns. Every account is given one when it is created, so a
+// caller without one is a broken account rather than a state the UI can reach.
+async function ownedTeam(userId: string): Promise<TargetTeam> {
+  const [row] = await db
+    .select({ id: team.id, name: team.name, mcpEnabled: team.mcpEnabled })
+    .from(teamMember)
+    .innerJoin(team, eq(team.id, teamMember.teamId))
+    .where(and(eq(teamMember.userId, userId), eq(teamMember.role, 'owner')))
+    .orderBy(team.id)
+    .limit(1);
+  if (!row) throw new HttpError(400, 'You do not own a team to create a project in');
+  return row;
 }
 
 // Every new project starts with one column per state type, so it's usable (has
@@ -235,7 +318,9 @@ export async function createProject(
     preset?: string;
   },
   ownerId: string,
+  teamId?: number,
 ): Promise<ProjectRow> {
+  const ownerTeam = await targetTeam(ownerId, teamId);
   // What a new project starts with, set instance-wide in god mode. Read before the
   // transaction opens so the settings lookup is not part of it.
   const defaults = await getProjectDefaults();
@@ -243,6 +328,7 @@ export async function createProject(
     const [row] = await tx
       .insert(project)
       .values({
+        teamId: ownerTeam.id,
         key: input.key,
         name: input.name,
         description: input.description ?? '',
@@ -250,14 +336,6 @@ export async function createProject(
       })
       .returning();
     await tx.insert(projectMember).values({ projectId: row.id, userId: ownerId, role: 'owner' });
-    // Every project starts with a default "Member" role, assigned to members that
-    // join through an invite.
-    await tx.insert(projectRole).values({
-      projectId: row.id,
-      name: 'Member',
-      isDefault: true,
-      permissions: defaultMemberPermissions(),
-    });
     for (const [position, column] of DEFAULT_COLUMNS.entries()) {
       await tx.insert(projectColumn).values({
         projectId: row.id,
@@ -280,7 +358,7 @@ export async function createProject(
     await tx
       .insert(projectSetting)
       .values({ projectId: row.id, key: AUTO_ARCHIVE_KEY, value: DEFAULT_AUTO_ARCHIVE });
-    return mapProject(row);
+    return mapProject({ ...row, teamName: ownerTeam.name, teamMcpEnabled: ownerTeam.mcpEnabled });
   });
 }
 
@@ -295,22 +373,8 @@ export async function updateProject(
   if (patch.name !== undefined) values.name = patch.name;
   if (patch.description !== undefined) values.description = patch.description;
   if (Object.keys(values).length === 0) return getProjectById(projectId);
-  const [row] = await db.update(project).set(values).where(eq(project.id, projectId)).returning();
-  return row ? mapProject(row) : null;
-}
-
-// Toggles whether the project is reachable through the MCP server. Owner-only at
-// the route; the flag gates every MCP tool call scoped to this project.
-export async function setProjectMcpEnabled(
-  projectId: number,
-  enabled: boolean,
-): Promise<ProjectRow | null> {
-  const [row] = await db
-    .update(project)
-    .set({ mcpEnabled: enabled })
-    .where(eq(project.id, projectId))
-    .returning();
-  return row ? mapProject(row) : null;
+  await db.update(project).set(values).where(eq(project.id, projectId));
+  return getProjectById(projectId);
 }
 
 // The project's feature toggles, read from the project row.
@@ -318,6 +382,7 @@ export function projectFeatures(row: ProjectRow): ProjectFeatures {
   return {
     initiatives: row.initiativesEnabled,
     dashboards: row.dashboardsEnabled,
+    documents: row.documentsEnabled,
     notes: row.notesEnabled,
     cycles: row.cyclesEnabled,
     subtasks: row.subtasksEnabled,
@@ -332,17 +397,23 @@ export async function setProjectFeatures(
   projectId: number,
   patch: Partial<ProjectFeatures>,
 ): Promise<ProjectRow | null> {
+  const { blockedFeatures } = await getLimits({ teamId: await getProjectTeamId(projectId) });
+  const blocked = blockedFeatures.find((feature) => patch[feature]);
+  if (blocked) {
+    throw new HttpError(400, `${featureLabel(blocked)} are not available for this team`);
+  }
   const values: Partial<typeof project.$inferInsert> = {};
   if (patch.initiatives !== undefined) values.initiativesEnabled = patch.initiatives;
   if (patch.dashboards !== undefined) values.dashboardsEnabled = patch.dashboards;
+  if (patch.documents !== undefined) values.documentsEnabled = patch.documents;
   if (patch.notes !== undefined) values.notesEnabled = patch.notes;
   if (patch.cycles !== undefined) values.cyclesEnabled = patch.cycles;
   if (patch.subtasks !== undefined) values.subtasksEnabled = patch.subtasks;
   if (patch.checklists !== undefined) values.checklistsEnabled = patch.checklists;
   if (patch.issueStats !== undefined) values.issueStatsEnabled = patch.issueStats;
   if (Object.keys(values).length === 0) return getProjectById(projectId);
-  const [row] = await db.update(project).set(values).where(eq(project.id, projectId)).returning();
-  return row ? mapProject(row) : null;
+  await db.update(project).set(values).where(eq(project.id, projectId));
+  return getProjectById(projectId);
 }
 
 // Which estimate kinds the project's issues carry, and whether its members log the
@@ -473,5 +544,37 @@ export async function setSubtaskAutomationSettings(
 // outside those cascades.
 export async function deleteProject(projectId: number): Promise<void> {
   await deleteThreadsWhere({ projectId });
-  await db.delete(project).where(eq(project.id, projectId));
+  // A team membership the SCIM reconciliation granted stands on the project
+  // memberships it granted with it, and no group change follows the delete to re-check
+  // it, so the members are read while they still exist and re-checked afterwards.
+  const provisioned = await db
+    .select({ teamId: project.teamId, userId: projectMember.userId })
+    .from(projectMember)
+    .innerJoin(project, eq(project.id, projectMember.projectId))
+    .where(and(eq(projectMember.projectId, projectId), eq(projectMember.source, 'scim')));
+  const assetKeys = await db.transaction(async (tx) => {
+    // Serialize with the final upload quota check. A concurrent upload either
+    // commits before these reads or loses its FK race and cleans its S3 object.
+    await lockAttachmentStorage(tx, projectId);
+    const issueAssets = await tx
+      .select({ s3Key: issueAttachment.s3Key })
+      .from(issueAttachment)
+      .innerJoin(issue, eq(issue.id, issueAttachment.issueId))
+      .where(eq(issue.projectId, projectId));
+    const chatAssets = await tx
+      .select({ s3Key: chatAttachment.s3Key })
+      .from(chatAttachment)
+      .where(eq(chatAttachment.projectId, projectId));
+    const documentAssets = await tx
+      .select({ s3Key: documentAsset.s3Key })
+      .from(documentAsset)
+      .innerJoin(projectDocument, eq(projectDocument.id, documentAsset.documentId))
+      .where(eq(projectDocument.projectId, projectId));
+    await tx.delete(project).where(eq(project.id, projectId));
+    return [...issueAssets, ...chatAssets, ...documentAssets].map((asset) => asset.s3Key);
+  });
+  await deleteObjects(assetKeys);
+  for (const { teamId, userId } of provisioned) {
+    await dropUnusedTeamMembership(teamId, userId);
+  }
 }

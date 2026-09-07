@@ -27,9 +27,11 @@ const CONTROL_CLASS = 'size-7 text-muted-foreground hover:text-foreground';
 export default function Modal({
   title,
   crumb,
+  headerAction,
   description,
-  projectKey,
+  scope,
   onClose,
+  onOpenAutoFocus,
   children,
   wide = false,
   fullscreen = false,
@@ -39,9 +41,17 @@ export default function Modal({
   title: string;
   // Trailing breadcrumb naming what the dialog was opened for.
   crumb?: string;
+  // A control shown after the title. It comes before the body in the DOM, so a
+  // caller that passes one has to focus its own first field through
+  // onOpenAutoFocus.
+  headerAction?: ReactNode;
   description?: string;
-  projectKey?: string;
+  // Leading breadcrumb naming what the dialog acts in: a project key, a team.
+  scope?: ReactNode;
   onClose: () => void;
+  // Radix focuses the first tabbable node when the dialog opens. Prevent it here
+  // and focus the field the dialog is really for.
+  onOpenAutoFocus?: (event: Event) => void;
   children: ReactNode;
   wide?: boolean | 'xl';
   // On the dialog itself, for a caller that has to adjust its padding.
@@ -59,6 +69,7 @@ export default function Modal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
+        onOpenAutoFocus={onOpenAutoFocus}
         className={cn(
           // DialogContent sets only transition-duration, so every property
           // transitions (transition-property defaults to `all`). Toggling
@@ -76,10 +87,10 @@ export default function Modal({
       >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {projectKey && (
+            {scope && (
               <>
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-sm font-medium text-secondary-foreground">
-                  {projectKey}
+                <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-sm font-medium text-secondary-foreground">
+                  {scope}
                 </span>
                 <span className="font-normal text-muted-foreground">›</span>
               </>
@@ -91,6 +102,7 @@ export default function Modal({
                 <span className="font-normal text-muted-foreground">{crumb}</span>
               </>
             )}
+            {headerAction}
           </DialogTitle>
           {description && <DialogDescription>{description}</DialogDescription>}
         </DialogHeader>

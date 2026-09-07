@@ -7,6 +7,7 @@ import {
   Send,
   SlidersHorizontal,
   Users,
+  UsersRound,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -77,11 +78,13 @@ export const GOD_SECTIONS: GodSection[] = [
     icon: KeyRound,
     integration: true,
   },
+  {
+    slug: 'scim',
+    group: 'instance',
+    icon: UsersRound,
+    integration: true,
+  },
 ];
-
-// The content column a god page occupies. Shared with the skeletons that stand in
-// for a page, so a loading section is the width of the section that replaces it.
-export const GOD_COLUMN_CLASS = 'min-w-[600px] max-w-[60%]';
 
 export function godSection(slug: string): GodSection {
   const section = GOD_SECTIONS.find((s) => s.slug === slug);

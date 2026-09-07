@@ -51,7 +51,6 @@
         "toggle": "打开命令面板"
       },
       "project": {
-        "switch": "切换到项目 1–9",
         "new": "新建项目",
         "settings": "打开项目设置"
       },
@@ -99,18 +98,26 @@
     "unreachable": "无法连接代理，请重试。",
     "runnerOffline": "运行器未连接",
     "runnerOfflineHint": "在你的机器上启动运行器，才能与该智能体聊天。",
-    "attachFile": "附加电子表格或文档供智能体导入",
+    "attachFile": "附加表格、文档、PDF 或文本文件供智能体读取",
     "removeAttachment": "移除附件",
     "uploadFailed": "文件上传失败。",
+    "tooManyAttachments": "一条消息最多可附加 {max} 个文件。",
     "importRows": "{count} 行",
     "confirmImport": "确认导入",
     "cancelImport": "取消",
     "importWorking": "正在创建任务…",
+    "importShowAllRows": "显示全部 {count} 行",
+    "importShowFewerRows": "仅显示前 {count} 行",
+    "importRowState": "导入",
+    "importRowNew": "将会创建",
+    "importSkipHint": "确认时会跳过标记 ✕ 的行。",
     "importAdjustHint": "如有不妥，请让智能体调整映射。",
     "importCanceled": "该导入已取消，未创建任何内容。",
     "importFailed": "导入失败。",
     "importConfirmed": "已创建 {count} 个任务",
-    "importSkippedRow": "已跳过第 {row} 行：{reason}"
+    "importSkippedRow": "已跳过第 {row} 行：{reason}",
+    "contextSize": "对话上下文：{count, plural, other {# 个 token}}",
+    "contextUnavailable": "该智能体不提供上下文大小"
   },
   "share": {
     "createFailed": "无法创建链接，请重试。",
@@ -141,6 +148,7 @@
     "initiatives": "计划",
     "cycles": "周期",
     "dashboards": "仪表盘",
+    "documents": "Docs",
     "notes": "便签",
     "subtasks": "子任务",
     "checklists": "检查清单",
@@ -167,5 +175,13 @@
   "chart": {
     "download": "保存图表",
     "downloadFailed": "图表保存失败"
+  },
+  "agent": "代理",
+  "pager": {
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {number} 页",
+    "perPage": "每页",
+    "range": "第 {first}-{last} 项，共 {total} 项"
   }
 }

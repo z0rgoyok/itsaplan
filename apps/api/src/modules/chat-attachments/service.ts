@@ -3,6 +3,10 @@ import { eq, sql } from 'drizzle-orm';
 import { HttpError, iso, num } from '#shared/lib';
 import { getObject } from '#shared/s3';
 import { isTableFilename, parseImportFile } from './parse';
+import {
+  assertAttachmentStorageCapacity,
+  lockAttachmentStorage,
+} from '#modules/attachments/storage';
 
 // Data access for chat attachments. File bytes live in the S3-compatible object
 // store (#shared/s3); these rows hold the metadata and the object key. publicId is
@@ -43,8 +47,12 @@ export async function createChatAttachment(input: {
   contentType: string;
   sizeBytes: number;
 }): Promise<ChatAttachmentRow> {
-  const [row] = await db.insert(chatAttachment).values(input).returning();
-  return mapRow(row);
+  return db.transaction(async (tx) => {
+    await lockAttachmentStorage(tx, input.projectId);
+    await assertAttachmentStorageCapacity(input.projectId, input.sizeBytes, 0, tx);
+    const [row] = await tx.insert(chatAttachment).values(input).returning();
+    return mapRow(row);
+  });
 }
 
 export async function getChatAttachmentByPublicId(
@@ -83,17 +91,16 @@ export interface ChatAttachmentContent {
   text?: string;
 }
 
-// The most an agent is shown of a text file in one read.
-const MAX_TEXT_EXCERPT = 4000;
-
 function isTextLike(row: ChatAttachmentRow): boolean {
   if (/^(text\/|application\/(json|xml))/.test(row.contentType)) return true;
   return /\.(txt|md|log|json|xml|ya?ml)$/i.test(row.filename);
 }
 
 // The content of a stored file in the shape the read route answers with: a table
-// for a spreadsheet or document, a text excerpt for a text file, nothing for a
-// binary one (its download url is in the metadata either way).
+// for a spreadsheet or document, the full text for a text file, nothing for a
+// binary one (its download url is in the metadata either way). A text file is
+// returned whole: what it costs in context is the user's call, and the chat
+// shows the conversation's context size.
 export async function readChatAttachmentContent(
   row: ChatAttachmentRow,
 ): Promise<ChatAttachmentContent> {
@@ -108,6 +115,6 @@ export async function readChatAttachmentContent(
       },
     };
   }
-  if (isTextLike(row)) return { text: bytes.toString('utf8').slice(0, MAX_TEXT_EXCERPT) };
+  if (isTextLike(row)) return { text: bytes.toString('utf8') };
   return {};
 }

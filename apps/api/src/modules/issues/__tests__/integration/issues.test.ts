@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 import { authedApi, type Api } from '#tests/helpers/app';
 import { signUpTestUser } from '#tests/helpers/auth';
 import { resetDb } from '#tests/helpers/db';
+import { createAgent } from '#tests/helpers/agents';
 
 // Issues live under a project. Create is /projects/:projectKey/issues (permission
 // guard on :projectKey); the other routes address the issue by its own id
@@ -266,6 +267,39 @@ describe('issues', () => {
         .issues({ sequenceNumber: 999999 })
         .get();
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe('dates', () => {
+    // The value goes into a `date` column, so an unvalidated one reaches Postgres
+    // and answers 500 with the driver's message instead of 400.
+    it('rejects a due date that is not YYYY-MM-DD', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await asOwner.projects({ projectKey: 'MKT' }).issues.post({
+        columnId,
+        title: 'Dated',
+        dueDate: '01.02.2026',
+      });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a due date an update sends in another notation', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const created = await asOwner
+        .projects({ projectKey: 'MKT' })
+        .issues.post({ columnId, title: 'Dated' });
+      const res = await asOwner
+        .issues({ issueId: created.data!.id })
+        .patch({ dueDate: '01.02.2026' });
+      expect(res.status).toBe(400);
+    });
+
+    it('rejects a date whose month does not exist', async () => {
+      const { asOwner, columnId } = await setupProject();
+      const res = await asOwner
+        .projects({ projectKey: 'MKT' })
+        .issues.post({ columnId, title: 'Dated', dueDate: '2026-13-45' });
+      expect(res.status).toBe(400);
     });
   });
 
@@ -585,9 +619,11 @@ describe('issues', () => {
     }
 
     async function createAgentUserId(client: Api) {
-      const res = await client
-        .projects({ projectKey: 'MKT' })
-        ['ai-agents'].post({ name: 'Bot', username: 'bot', kind: 'external' });
+      const res = await createAgent(client, 'MKT', {
+        name: 'Bot',
+        username: 'bot',
+        kind: 'external',
+      });
       return res.data!.agent.userId;
     }
 

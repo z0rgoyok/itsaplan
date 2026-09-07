@@ -71,7 +71,7 @@ export default function InviteAuthForm({
           captchaToken,
           registerFailed: t('registerFailed'),
         });
-        router.push(projectPath(result.projectKey));
+        router.push(result.projectKey ? projectPath(result.projectKey) : '/');
         router.refresh();
       } else {
         await signInForInvite({

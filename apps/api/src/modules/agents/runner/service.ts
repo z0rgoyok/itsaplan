@@ -1,5 +1,6 @@
-import { db, aiAgent, agentRun, project } from '@repo/db';
+import { db, aiAgent, agentRun, project, projectMember } from '@repo/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { type ContextUsage } from '../chat-usage';
 import { agentRunConfig, loadThreadContext } from '../core/run-queue';
 import { recordAgentRunFinished, recordAgentRunStarted } from '../core/run-activity';
 import type { AgentKind } from '../core/service';
@@ -21,18 +22,24 @@ import {
 // row stays 'pending' and its next_attempt_at is pushed forward by a lease, so a run
 // whose runner dies mid-flight becomes claimable again once the lease expires.
 
+// The project facts a system prompt names.
+export interface RunnerProject {
+  key: string;
+  name: string;
+  description: string;
+}
+
 export interface RunnerAgent {
   id: number;
-  projectId: number;
+  teamId: number;
   kind: AgentKind;
   // The agent's bot user, so a run's prompts do not name the agent to itself, and
   // the handle it is addressed by.
   userId: string;
   username: string;
-  // The project the agent belongs to and the operator's own instructions, both of
-  // which go into the system prompt handed out with a run.
-  projectKey: string;
-  projectName: string;
+  // The projects of the team the agent works in, and the operator's own instructions.
+  // A chat names all of them in the system prompt; a run names the one it works in.
+  projects: RunnerProject[];
   instructions: string | null;
 }
 
@@ -43,20 +50,24 @@ export async function getRunnerAgent(userId: string): Promise<RunnerAgent | null
   const rows = await db
     .select({
       id: aiAgent.id,
-      projectId: aiAgent.projectId,
+      teamId: aiAgent.teamId,
       kind: aiAgent.kind,
       userId: aiAgent.userId,
       username: aiAgent.username,
-      projectKey: project.key,
-      projectName: project.name,
       instructions: aiAgent.instructions,
     })
     .from(aiAgent)
-    .innerJoin(project, eq(project.id, aiAgent.projectId))
     .where(eq(aiAgent.userId, userId))
     .limit(1);
   const row = rows[0];
-  return row ? { ...row, kind: row.kind as AgentKind } : null;
+  if (!row) return null;
+  const projects = await db
+    .select({ key: project.key, name: project.name, description: project.description })
+    .from(projectMember)
+    .innerJoin(project, eq(project.id, projectMember.projectId))
+    .where(and(eq(projectMember.userId, userId), eq(project.teamId, row.teamId)))
+    .orderBy(project.key);
+  return { ...row, kind: row.kind as AgentKind, projects };
 }
 
 export interface RunnerRun {
@@ -78,6 +89,10 @@ export interface RunnerRun {
 // The claim's raw row, before framing. The extra people columns exist only to build
 // the prompts and are not handed to the runner.
 type ClaimedRow = Omit<RunnerRun, 'systemPrompt'> & {
+  // The project the run works in, which is what its system prompt names.
+  projectKey: string;
+  projectName: string;
+  projectDescription: string;
   issueTitle: string | null;
   assigneeName: string | null;
   assigneeUsername: string | null;
@@ -137,6 +152,9 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
       r.prompt,
       r.attempts,
       r.issue_id AS "issueId",
+      (SELECT p.key FROM project p WHERE p.id = r.project_id) AS "projectKey",
+      (SELECT p.name FROM project p WHERE p.id = r.project_id) AS "projectName",
+      (SELECT p.description FROM project p WHERE p.id = r.project_id) AS "projectDescription",
       (SELECT p.key || '-' || i.sequence_number
          FROM issue i JOIN project p ON p.id = i.project_id
          WHERE i.id = r.issue_id) AS "issueIdentifier",
@@ -168,21 +186,25 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
     id: row.id,
     trigger: row.trigger,
     prompt: framePrompt(forPrompt),
-    systemPrompt: buildSystemPrompt(agent, forPrompt),
+    systemPrompt: buildSystemPrompt(
+      agent,
+      { key: row.projectKey, name: row.projectName, description: row.projectDescription },
+      forPrompt,
+    ),
     attempts: row.attempts,
     issueId: row.issueId,
     issueIdentifier: row.issueIdentifier,
   };
 }
 
-// What the agent is told about the run before the task itself: the project it works
-// in, that the run is autonomous, who the people behind it are, and last the
+// What the agent is told about the run before the task itself: the project the run
+// works in, that the run is autonomous, who the people behind it are, and last the
 // operator's own instructions from the agent's settings, which therefore win over the
 // generic parts.
-function buildSystemPrompt(agent: RunnerAgent, run: RunForPrompt): string {
+function buildSystemPrompt(agent: RunnerAgent, project: RunnerProject, run: RunForPrompt): string {
   const instructions = agent.instructions?.trim();
   return (
-    projectPreamble({ key: agent.projectKey, name: agent.projectName }) +
+    projectPreamble(project) +
     runModePreamble(run.trigger) +
     peopleContext(run) +
     (instructions ? `## Instructions\n${instructions}\n` : '')
@@ -211,7 +233,12 @@ export async function heartbeatRun(agentId: number, runId: number): Promise<bool
 export async function finishRun(
   agent: RunnerAgent,
   runId: number,
-  result: { status: 'success' | 'failed'; output?: string | null; error?: string | null },
+  result: {
+    status: 'success' | 'failed';
+    output?: string | null;
+    error?: string | null;
+    usage?: ContextUsage | null;
+  },
 ): Promise<boolean> {
   await touchRunner(agent.id);
   const rows = await db
@@ -220,6 +247,8 @@ export async function finishRun(
       status: result.status,
       output: result.output?.slice(0, 10_000) ?? null,
       lastError: result.status === 'failed' ? (result.error?.slice(0, 500) ?? 'Run failed') : null,
+      inputTokens: result.usage?.inputTokens ?? null,
+      outputTokens: result.usage?.outputTokens ?? null,
       finishedAt: new Date(),
     })
     .where(

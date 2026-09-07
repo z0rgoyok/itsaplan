@@ -24,9 +24,9 @@
   "copyGroups": {
     "workflow": "Робочий процес",
     "automation": "Автоматизація",
-    "project": "Проєкт",
     "views": "Подання",
-    "aiTeam": "AI-команда"
+    "aiTeam": "AI-команда",
+    "knowledge": "Знання"
   },
   "copyItems": {
     "states": "Статуси",
@@ -35,14 +35,10 @@
     "customFields": "Власні поля",
     "views": "Подання",
     "dashboards": "Дашборди",
+    "documents": "Docs",
     "actions": "Дії",
     "configuration": "Конфігурація",
-    "roles": "Ролі",
-    "notificationProviders": "Провайдери сповіщень",
     "webhooks": "Вебхуки",
-    "integrations": "Інтеграції",
-    "tools": "Інструменти",
-    "skills": "Навички",
     "agents": "Агенти",
     "schedules": "Розклади"
   },

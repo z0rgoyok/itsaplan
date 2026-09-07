@@ -1,4 +1,4 @@
-import { db, projectMember, projectRole, revision } from '@repo/db';
+import { db, projectMember, teamRole, revision } from '@repo/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { toMemberContext, type MemberRole } from '#modules/members/service';
 import { hasPermission, type PermissionResource } from '#shared/permissions';
@@ -8,10 +8,9 @@ import { hasPermission, type PermissionResource } from '#shared/permissions';
 // the marker whichever process it came from.
 
 // A scope kind a client may ask for: the key it maps to in the revision table and
-// the resource the caller must be allowed to read to watch it. Three kinds are
-// addressed by the entity's id; the inbox is per user, so the session user is added
-// to its key here, clients never send or see it, and it needs no permission — it is
-// the caller's own.
+// the resource the caller must be allowed to read to watch it. Project-wide and
+// entity scopes use the supplied id. The inbox is per user, so the session user is
+// added to its key here; clients never send or see it, and it needs no permission.
 export interface ScopeKind {
   key: (id: number, userId: string) => string;
   resource: PermissionResource | null;
@@ -19,6 +18,7 @@ export interface ScopeKind {
 
 export const scopeKind: Record<string, ScopeKind> = {
   board: { key: (projectId) => `board:${projectId}`, resource: 'work_items' },
+  documents: { key: (projectId) => `documents:${projectId}`, resource: 'documents' },
   issue: { key: (issueId) => `issue:${issueId}`, resource: 'work_items' },
   initiative: {
     key: (initiativeId) => `initiative:${initiativeId}`,
@@ -51,11 +51,11 @@ export async function readRevs(
       scope: revision.scope,
       rev: revision.rev,
       role: projectMember.role,
-      permissions: projectRole.permissions,
+      permissions: teamRole.permissions,
     })
     .from(revision)
     .innerJoin(projectMember, eq(projectMember.projectId, revision.projectId))
-    .leftJoin(projectRole, eq(projectRole.id, projectMember.roleId))
+    .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
     .where(
       and(
         inArray(

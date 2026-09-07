@@ -1,19 +1,19 @@
 import { Elysia } from 'elysia';
-import { randomUUID, createHash } from 'node:crypto';
 import { authContext } from '#shared/auth-context';
 import { guards, entityGuard } from '#shared/guards';
 import { HttpError } from '#shared/lib';
-import { putObject, getObject } from '#shared/s3';
+import { getObject } from '#shared/s3';
 import { mcpTool } from '#mcp/generate';
 import { accessErrors, commonErrors, errors } from '#shared/responses';
 import { requireUser } from '#shared/access';
 import {
-  getStorageSettings,
-  mimeAllowed,
-  MB,
-  type StorageSettings,
-} from '#modules/settings/service';
-import { getProjectAttachmentBytes } from '#modules/attachments/service';
+  assertAttachmentUploadAllowed,
+  attachmentEtag,
+  attachmentObjectKey,
+  deleteAttachmentObject,
+  safeAttachmentFilename,
+  storeAttachmentObject,
+} from '#modules/attachments/storage';
 import {
   ChatAttachmentContentResponse,
   ChatAttachmentResponse,
@@ -22,11 +22,11 @@ import {
   rawAttachmentQuery,
   uploadChatAttachmentBody,
 } from './model';
+import { pdfToMarkdown } from './pdf';
 import {
   createChatAttachment,
   getChatAttachmentByPublicId,
   getChatAttachmentProjectId,
-  getProjectChatAttachmentBytes,
   readChatAttachmentContent,
   type ChatAttachmentRow,
 } from './service';
@@ -36,42 +36,17 @@ import {
 // file and read one back; the download route is public, like an issue
 // attachment's, so the link a chat message renders works for anyone viewing it.
 
-// The upload limits are instance settings, read per request. The quota counts
-// both issue and chat attachments, the two tenants of a project's stored bytes.
-async function assertUploadAllowed(
-  limits: StorageSettings,
-  projectId: number,
-  size: number,
-  contentType: string,
-): Promise<void> {
-  if (size > limits.maxAttachmentMb * MB) {
-    throw new HttpError(413, `File exceeds the ${limits.maxAttachmentMb} MB limit`);
-  }
-  if (!mimeAllowed(contentType, limits.attachmentMimeTypes)) {
-    throw new HttpError(400, `Files of type "${contentType}" are not accepted on this instance`);
-  }
-  if (limits.projectQuotaMb > 0) {
-    const used =
-      (await getProjectAttachmentBytes(projectId)) +
-      (await getProjectChatAttachmentBytes(projectId));
-    if (used + size > limits.projectQuotaMb * MB) {
-      throw new HttpError(
-        413,
-        `The project has used its ${limits.projectQuotaMb} MB storage quota. Delete attachments to free space.`,
-      );
-    }
-  }
-}
+// A browser reports no type for a .md or .txt file on some platforms, and the
+// instance allowlist matches on the type, so the extension answers for it.
+const EXTENSION_TYPES: Record<string, string> = {
+  md: 'text/markdown',
+  txt: 'text/plain',
+};
 
 // Object keys are grouped by project so a project's bytes sit under one prefix in
 // the bucket, which is what makes per-project listing, cleanup, and policies
 // possible. The original filename stays the last key segment so the extension is
 // visible in the bucket.
-function chatAttachmentKey(projectId: number, filename: string): string {
-  const safeName = filename.replace(/[^\w.-]+/g, '_').slice(-100);
-  return `projects/${projectId}/chat/${randomUUID()}-${safeName}`;
-}
-
 // Public shape: never exposes the internal serial id or the object key. `url` is
 // the public, no-auth download route.
 function chatAttachmentDto(a: ChatAttachmentRow) {
@@ -92,7 +67,7 @@ export const chatAttachmentRoutes = new Elysia({
   .use(authContext)
   .use(guards)
   .macro({
-    chatAttachment: entityGuard('work_items', 'Attachment not found', (p) =>
+    chatAttachment: entityGuard('ai_agents', 'Attachment not found', (p) =>
       getChatAttachmentProjectId(p.publicId),
     ),
   })
@@ -106,37 +81,52 @@ export const chatAttachmentRoutes = new Elysia({
       if (bytes.length === 0) {
         throw new HttpError(400, 'contentBase64 is empty or not valid base64');
       }
-      const filename = body.filename;
-      const contentType = body.contentType || 'application/octet-stream';
-      await assertUploadAllowed(await getStorageSettings(), project.id, bytes.length, contentType);
+      let filename = safeAttachmentFilename(body.filename);
+      const extension = filename.toLowerCase().split('.').pop() ?? '';
+      let contentType =
+        body.contentType || EXTENSION_TYPES[extension] || 'application/octet-stream';
+      await assertAttachmentUploadAllowed(project.id, bytes.length, contentType);
 
-      const key = chatAttachmentKey(project.id, filename);
-      try {
-        await putObject(key, bytes, contentType);
-      } catch (err) {
-        throw new HttpError(502, `Object store error: ${err instanceof Error ? err.message : err}`);
+      // A PDF is stored as the Markdown it converts to: the original is
+      // discarded, so the row, the download link, and the agent all see text.
+      let content = bytes;
+      if (/\.pdf$/i.test(filename) || contentType === 'application/pdf') {
+        content = Buffer.from(await pdfToMarkdown(bytes), 'utf8');
+        filename = filename.replace(/\.pdf$/i, '') + '.md';
+        contentType = 'text/markdown';
+        await assertAttachmentUploadAllowed(project.id, content.length, contentType);
       }
 
-      const row = await createChatAttachment({
-        projectId: project.id,
-        uploadedByUserId: requireUser(user).id,
-        s3Key: key,
-        filename,
-        contentType,
-        sizeBytes: bytes.length,
-      });
+      const key = attachmentObjectKey(project.id, 'chat', null, filename);
+      await storeAttachmentObject(key, content, contentType);
+
+      let row;
+      try {
+        row = await createChatAttachment({
+          projectId: project.id,
+          uploadedByUserId: requireUser(user).id,
+          s3Key: key,
+          filename,
+          contentType,
+          sizeBytes: content.length,
+        });
+      } catch (error) {
+        await deleteAttachmentObject(key);
+        throw error;
+      }
       set.status = 201;
       return chatAttachmentDto(row);
     },
     {
       body: uploadChatAttachmentBody,
       params: projectKeyParams,
-      permission: ['work_items', 'create'],
+      permission: ['ai_agents', 'read'],
       response: { 201: ChatAttachmentResponse, ...commonErrors, ...errors(413, 502) },
       detail: {
         summary: 'Upload a chat attachment',
         description:
           'Store a file for the agent chat: a spreadsheet to import issues from, a spec, or a log. ' +
+          'A PDF is converted to Markdown and stored as a .md file; a scanned PDF is refused. ' +
           'Send the bytes as base64 in `contentBase64`. Read it back with read_chat_attachment.',
         ...mcpTool('upload_chat_attachment'),
       },
@@ -144,7 +134,7 @@ export const chatAttachmentRoutes = new Elysia({
   )
 
   // Reads a stored file back: its metadata and, when the file holds one, its
-  // content — a parsed table for a spreadsheet or document, an excerpt for a
+  // content — a parsed table for a spreadsheet or document, the full text for a
   // text file.
   .get(
     '/chat-attachments/:publicId',
@@ -160,10 +150,13 @@ export const chatAttachmentRoutes = new Elysia({
       detail: {
         summary: 'Read a chat attachment',
         description:
-          'Read a file uploaded in the chat: its metadata and, for a spreadsheet or document ' +
-          '(.xlsx, .csv, .docx), the column headers and first rows; for a text file, its first ' +
-          'characters. The id comes from the [file: "name" (attachment id: …)] marker in the ' +
-          "user's message. To turn a table into issues, map its columns with prepare_issue_import.",
+          'Read a file the person attached in the chat. A [file: "name" (attachment id: …)] ' +
+          'marker in their message means that file is attached: it is stored in the chat and ' +
+          'is not on your filesystem, so read it with this tool and the id from the marker — ' +
+          'never look for it on disk. Answers with the file metadata and, for a spreadsheet or ' +
+          'document (.xlsx, .csv, .docx), the column headers and first rows; for a text file ' +
+          '(.md, .txt, and a PDF converted to Markdown on upload), its full text. To turn a ' +
+          'table into issues, map its columns with prepare_issue_import.',
         ...mcpTool('read_chat_attachment'),
       },
     },
@@ -180,7 +173,7 @@ export const chatAttachmentRoutes = new Elysia({
 
       // The etag is a digest of the key rather than the key itself: this route is
       // public, and the key carries the project id and the stored filename.
-      const etag = `"${createHash('sha256').update(row.s3Key).digest('base64url').slice(0, 22)}"`;
+      const etag = attachmentEtag(row.s3Key);
       if (request.headers.get('if-none-match') === etag) {
         return new Response(null, { status: 304, headers: { ETag: etag } });
       }
@@ -213,10 +206,11 @@ export const chatAttachmentRoutes = new Elysia({
       return new Response(obj.body, { headers });
     },
     {
+      params: publicIdParams,
       query: rawAttachmentQuery,
       // Public route: no 401/403. Returns a raw Response (bytes), so no typed 200
-      // body — Elysia cannot validate a raw Response. Only the 404 it can throw.
-      response: { ...errors(404) },
+      // body — Elysia cannot validate a raw Response. Only the statuses it can throw.
+      response: { ...errors(400, 404) },
       detail: { summary: 'Download a chat attachment (public, no auth)' },
     },
   );

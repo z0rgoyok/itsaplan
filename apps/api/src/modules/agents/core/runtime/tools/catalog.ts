@@ -3,7 +3,8 @@
 //
 // - AGENT_ACTIONS: actions the user opts an agent into. The enabled subset is stored
 //   in ai_agent.tools and becomes the tools the runtime exposes. Mutating actions
-//   belong here; so do the note board reads, since notes are an optional feature.
+//   belong here; so do document and note-board reads, since both are optional
+//   project knowledge surfaces.
 // - ALWAYS_ON_ACTIONS: actions always granted, so an agent can always see its
 //   project and read the files dropped in its chat regardless of which other
 //   actions it is allowed to take. Listed only so the UI can show them (always
@@ -14,11 +15,15 @@
 // tools/local.ts). What a tool
 // accepts and who may call it come from the route itself (see tools/route-tools.ts);
 // this file adds the allowlist, the UI copy, and the agent-only overrides (see
-// ToolMeta.overrides). An agent's effective rights are the intersection of these keys
-// and its project role.
+// ToolMeta.overrides). An agent's effective rights in a project are the intersection
+// of these keys and the role its membership of that project carries.
+//
+// ToolMeta carries no resource and no action. The permission of an action is the one
+// its route asserts and is read off the route (see actionCatalog in route-tools.ts);
+// restating it here would be a second list that drifts from the guards silently.
 
 // The feature an action belongs to, so the config UI can group the catalog.
-export type ToolGroup = 'issues' | 'initiatives' | 'cycles' | 'notes' | 'project';
+export type ToolGroup = 'issues' | 'initiatives' | 'cycles' | 'documents' | 'notes' | 'project';
 
 export interface ToolMeta {
   key: string;
@@ -115,9 +120,8 @@ export const AGENT_ACTIONS: ToolMeta[] = [
   {
     key: 'prepare_issue_import',
     group: 'issues',
-    label: 'Prepare issue imports',
-    description:
-      "Map the columns of a file uploaded in the chat to issue fields and draft the import for the user's review. Issues are created only when the user confirms.",
+    label: 'Import issues from files',
+    description: 'Turn a table attached in the chat (.xlsx, .csv, .docx) into issues.',
     always: false,
   },
   {
@@ -195,6 +199,41 @@ export const AGENT_ACTIONS: ToolMeta[] = [
     group: 'cycles',
     label: 'Transfer cycle issues',
     description: "Move a cycle's unfinished issues to another cycle, or off any cycle.",
+    always: false,
+  },
+  {
+    key: 'list_documents',
+    group: 'documents',
+    label: 'List documents',
+    description: 'List and search the shared project Docs tree.',
+    always: false,
+  },
+  {
+    key: 'get_document',
+    group: 'documents',
+    label: 'Read documents',
+    description: 'Read a shared project document and its Markdown content.',
+    always: false,
+  },
+  {
+    key: 'create_document',
+    group: 'documents',
+    label: 'Create documents',
+    description: 'Create shared project documents and nested pages.',
+    always: false,
+  },
+  {
+    key: 'update_document',
+    group: 'documents',
+    label: 'Update documents',
+    description: 'Edit document titles, Markdown content, nesting, and order.',
+    always: false,
+  },
+  {
+    key: 'delete_document',
+    group: 'documents',
+    label: 'Delete documents',
+    description: 'Permanently delete shared project documents.',
     always: false,
   },
   {

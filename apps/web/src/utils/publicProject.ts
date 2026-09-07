@@ -16,9 +16,16 @@ export function toPublicProjectDetail(
     issueTypes: scaffold.issueTypes,
     labels: scaffold.labels,
     labelGroups: scaffold.labelGroups,
-    assignees: scaffold.assignees.map((a) => ({ ...a, email: '', username: null })),
+    assignees: scaffold.assignees.map((a) => ({
+      ...a,
+      email: '',
+      username: null,
+      canReadWorkItems: false,
+    })),
     customFields: scaffold.customFields,
-    viewer: { role: 'member' },
+    // A public page creates nothing, so it needs no templates.
+    issueTemplates: [],
+    viewer: { role: 'member', teamRole: null },
     permissions: {} as Permissions,
     issues,
     // A share bundle carries no cycle list; a view grouped by cycle gets its lanes

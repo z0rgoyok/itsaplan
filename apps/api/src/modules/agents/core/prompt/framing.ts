@@ -1,5 +1,6 @@
 import { peoplePreamble, type Person } from './run-context';
 import { parseMentionHandles } from '#shared/mentions';
+import { PROJECT_DESCRIPTION_LIMIT } from '#modules/projects/model';
 import type { AgentRunTrigger } from '../../model';
 
 // Frames a triggered run into the text an agent receives: the framed user
@@ -129,12 +130,48 @@ function frameMention(run: RunForPrompt, titled: string): string {
 // A leading system-instruction block naming the project the agent works in. Grounds
 // every run — the test chat, the issue-triggered runs, and the ones a runner executes
 // — so the agent knows which project its tools act on and how issue keys are formed.
-export function projectPreamble(project: { key: string; name: string }): string {
+export function projectPreamble(project: {
+  key: string;
+  name: string;
+  description: string;
+}): string {
+  const description = project.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
   return [
     '## Current project',
     `You are working in the project "${project.name}" (key ${project.key}). All your`,
     `work-item tools act on this project only, and its issues are addressed by keys`,
     `like ${project.key}-123.`,
+    ...(description ? ['', description] : []),
+    '',
+    '',
+  ].join('\n');
+}
+
+// The projects an agent works in, for a path with no single one of its own: a chat is
+// held with the agent, not inside a project, so it names every project the agent
+// reaches and the key each is addressed by.
+export function projectsPreamble(
+  projects: { key: string; name: string; description: string }[],
+): string {
+  if (projects.length === 0) {
+    return [
+      '## Projects',
+      'You work in no project yet. Your work-item tools reach nothing until someone',
+      'attaches you to one.',
+      '',
+      '',
+    ].join('\n');
+  }
+  if (projects.length === 1) return projectPreamble(projects[0]);
+  return [
+    '## Projects',
+    'You work in these projects. A work-item tool takes the key of the one to act in,',
+    'and its issues are addressed by keys like KEY-123.',
+    '',
+    ...projects.map((p) => {
+      const description = p.description.trim().slice(0, PROJECT_DESCRIPTION_LIMIT);
+      return `- ${p.key} — "${p.name}"${description ? `: ${description}` : ''}`;
+    }),
     '',
     '',
   ].join('\n');
@@ -154,6 +191,18 @@ export function chartPreamble(): string {
     '```',
     '',
     'The block holds the spec and nothing else — the app draws it as the chart.',
+    '',
+    '',
+  ].join('\n');
+}
+
+// Only the chat paths carry this: a file is attached to a chat message, so an
+// autonomous run never meets the marker.
+export function attachmentPreamble(): string {
+  return [
+    '## Attached files',
+    'A [file: "name" (attachment id: …)] marker in the person\'s message means they attached',
+    'that file. Read it with the read_chat_attachment tool.',
     '',
     '',
   ].join('\n');

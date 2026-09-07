@@ -6,8 +6,10 @@ import {
   type InstanceAuthSettingsPatch,
   type InstanceEmailSettingsPatch,
   type InstanceGoogleSettingsPatch,
+  type InstanceOidcSettingsPatch,
   type InstanceTelegramSettingsPatch,
   type InstanceUserKind,
+  type PageParams,
   type ProjectDefaults,
   type StorageSettingsPatch,
 } from '@/lib/api';
@@ -16,6 +18,13 @@ import { qk } from '@/services/queryKeys';
 // Data hooks for god mode. Every write returns the new state, which replaces the
 // cache entry directly — these are single-row settings, so there is nothing else to
 // invalidate. The invite list is a list, so its writes refetch it.
+
+// Configuring a sign-in provider decides whether password sign-in may be turned off,
+// and changes what the sign-in screen offers.
+function invalidateSignInMethods(qc: ReturnType<typeof useQueryClient>): void {
+  void qc.invalidateQueries({ queryKey: qk.instanceAuthSettings });
+  void qc.invalidateQueries({ queryKey: qk.authConfig });
+}
 
 export function useInstanceAuthSettingsQuery() {
   return useQuery({
@@ -51,6 +60,12 @@ export function useUpdateInstanceEmailSettings() {
   });
 }
 
+export function useTestInstanceEmailSettings() {
+  return useMutation({
+    mutationFn: (patch: InstanceEmailSettingsPatch) => api.testInstanceEmailSettings(patch),
+  });
+}
+
 export function useInstanceGoogleSettingsQuery() {
   return useQuery({
     queryKey: qk.instanceGoogleSettings,
@@ -62,7 +77,74 @@ export function useUpdateInstanceGoogleSettings() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: InstanceGoogleSettingsPatch) => api.updateInstanceGoogleSettings(patch),
-    onSuccess: (data) => qc.setQueryData(qk.instanceGoogleSettings, data),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.instanceGoogleSettings, data);
+      invalidateSignInMethods(qc);
+    },
+  });
+}
+
+// The instance's generic OIDC provider, the second way in besides Google.
+export function useInstanceOidcSettingsQuery() {
+  return useQuery({
+    queryKey: qk.instanceOidcSettings,
+    queryFn: () => api.getInstanceOidcSettings(),
+  });
+}
+
+export function useUpdateInstanceOidcSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: InstanceOidcSettingsPatch) => api.updateInstanceOidcSettings(patch),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.instanceOidcSettings, data);
+      invalidateSignInMethods(qc);
+    },
+  });
+}
+
+// SCIM provisioning: the token an identity provider authenticates with, and what the
+// groups it pushes grant.
+export function useInstanceScimSettingsQuery() {
+  return useQuery({
+    queryKey: qk.instanceScimSettings,
+    queryFn: () => api.getInstanceScimSettings(),
+  });
+}
+
+export function useUpdateInstanceScimSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: { enabled: boolean }) => api.updateInstanceScimSettings(patch),
+    onSuccess: (data) => qc.setQueryData(qk.instanceScimSettings, data),
+  });
+}
+
+export function useCreateInstanceScimToken() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.createInstanceScimToken(),
+    // The response is the token itself, not the settings, so the redacted view has
+    // to be refetched for its new prefix.
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.instanceScimSettings }),
+  });
+}
+
+export function useInstanceScimGroupsQuery() {
+  return useQuery({
+    queryKey: qk.instanceScimGroups,
+    queryFn: () => api.listInstanceScimGroups(),
+  });
+}
+
+export function useSetInstanceScimGroupMappings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      groupId: string;
+      mappings: { projectId: number; role: 'owner' | 'member'; roleId: number | null }[];
+    }) => api.setInstanceScimGroupMappings(input.groupId, input.mappings),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.instanceScimGroups }),
   });
 }
 
@@ -121,11 +203,9 @@ export function useUpdateInstanceStorageSettings() {
   });
 }
 
-export interface InstanceUserFilters {
+export interface InstanceUserFilters extends PageParams {
   search: string;
   kind: InstanceUserKind;
-  limit: number;
-  offset: number;
 }
 
 // One page of the user directory. The filters are part of the key, and the previous
@@ -134,13 +214,7 @@ export interface InstanceUserFilters {
 export function useInstanceUsersQuery(filters: InstanceUserFilters) {
   return useQuery({
     queryKey: qk.instanceUsers(filters),
-    queryFn: () =>
-      api.listInstanceUsers({
-        search: filters.search || undefined,
-        kind: filters.kind,
-        limit: filters.limit,
-        offset: filters.offset,
-      }),
+    queryFn: () => api.listInstanceUsers({ ...filters, search: filters.search || undefined }),
     placeholderData: keepPreviousData,
   });
 }
@@ -169,10 +243,8 @@ export function useDeleteInstanceUser() {
   });
 }
 
-export interface InstanceProjectFilters {
+export interface InstanceProjectFilters extends PageParams {
   search: string;
-  limit: number;
-  offset: number;
 }
 
 // One page of the project directory. Like the user directory, the filters are part
@@ -180,13 +252,18 @@ export interface InstanceProjectFilters {
 export function useInstanceProjectsQuery(filters: InstanceProjectFilters) {
   return useQuery({
     queryKey: qk.instanceProjects(filters),
-    queryFn: () =>
-      api.listInstanceProjects({
-        search: filters.search || undefined,
-        limit: filters.limit,
-        offset: filters.offset,
-      }),
+    queryFn: () => api.listInstanceProjects({ ...filters, search: filters.search || undefined }),
     placeholderData: keepPreviousData,
+  });
+}
+
+// Every project on the instance, for the SCIM mapping picker. Changes rarely, so it
+// is cached for the session.
+export function useInstanceProjectOptionsQuery() {
+  return useQuery({
+    queryKey: qk.instanceProjectOptions,
+    queryFn: () => api.listInstanceProjectOptions(),
+    staleTime: Infinity,
   });
 }
 

@@ -17,6 +17,7 @@ COPY packages/auth/package.json ./packages/auth/
 COPY packages/agent-tools/package.json ./packages/agent-tools/
 COPY packages/crypto/package.json ./packages/crypto/
 COPY packages/mailer/package.json ./packages/mailer/
+COPY packages/net/package.json ./packages/net/
 COPY packages/runner/package.json ./packages/runner/
 COPY packages/eslint-config/package.json ./packages/eslint-config/
 # --filter api installs only the api workspace and its dependency closure, so the
@@ -32,6 +33,11 @@ RUN bun install --frozen-lockfile --filter api $INSTALL_FLAGS
 # clobber the copied dependencies.
 FROM base AS release
 ENV NODE_ENV=production
+# pg_dump, for the backup migrate.ts takes before it applies anything. The package
+# tracks the Postgres the compose file runs (17), and a client older than the server
+# refuses to dump, so an instance on a newer server needs a newer image or
+# SKIP_PRE_MIGRATION_BACKUP=1.
+RUN apk add --no-cache postgresql-client
 COPY --from=install /app ./
 COPY . .
 

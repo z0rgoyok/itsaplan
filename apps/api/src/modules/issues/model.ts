@@ -1,10 +1,69 @@
 import { t } from 'elysia';
 import { ActivityPayloadResponse } from '#shared/activity';
+import { DevelopmentLinkResponse } from '#modules/git/model';
 import { isoDate } from '#shared/schemas';
 
 // t.Numeric validates a numeric path param and coerces the string to a number. A
 // non-numeric id gets a 400 before it reaches the service.
 export const issueParams = t.Object({ issueId: t.Numeric() });
+export const issueDevelopmentLinkParams = t.Object({
+  issueId: t.Numeric(),
+  linkId: t.Numeric(),
+});
+export const issueDevelopmentRepositoryParams = t.Object({
+  issueId: t.Numeric(),
+  repositoryId: t.Numeric(),
+});
+
+export const issueDevelopmentListQuery = t.Object({
+  page: t.Optional(t.Numeric({ minimum: 1 })),
+  state: t.Optional(t.Union([t.Literal('open'), t.Literal('all')])),
+});
+
+export const linkIssueDevelopmentBody = t.Object({
+  repositoryId: t.Integer({ minimum: 1 }),
+  number: t.Integer({ minimum: 1 }),
+});
+
+export const createIssuePullRequestBody = t.Object({
+  repositoryId: t.Integer({ minimum: 1 }),
+  sourceBranch: t.String({ minLength: 1, maxLength: 500 }),
+  targetBranch: t.String({ minLength: 1, maxLength: 500 }),
+  title: t.String({ minLength: 1, maxLength: 500 }),
+  description: t.String({ maxLength: 50_000 }),
+  draft: t.Boolean(),
+});
+
+export const DevelopmentRepositoryResponse = t.Object({
+  id: t.Number(),
+  provider: t.Union([t.Literal('github'), t.Literal('gitlab')]),
+  fullName: t.String(),
+  webUrl: t.String(),
+});
+
+export const LinkablePullRequestResponse = t.Object({
+  number: t.Number(),
+  title: t.String(),
+  url: t.Nullable(t.String()),
+  state: t.Union([t.Literal('open'), t.Literal('merged'), t.Literal('closed')]),
+  draft: t.Boolean(),
+  sourceBranch: t.Nullable(t.String()),
+  targetBranch: t.String(),
+  headSha: t.Nullable(t.String()),
+  updatedAt: t.String(),
+  linked: t.Boolean(),
+});
+
+export const LinkablePullRequestPageResponse = t.Object({
+  pullRequests: t.Array(LinkablePullRequestResponse),
+  nextPage: t.Nullable(t.Number()),
+});
+
+export const DevelopmentBranchPageResponse = t.Object({
+  branches: t.Array(t.String()),
+  defaultBranch: t.Nullable(t.String()),
+  nextPage: t.Nullable(t.Number()),
+});
 
 // --- Response DTO schemas (mirror the service interfaces the handlers return) -----
 
@@ -152,6 +211,11 @@ export const IssueWatcherResponse = t.Object({
   image: t.Nullable(t.String()),
 });
 
+export const issueWatcherParams = t.Object({
+  issueId: t.Numeric(),
+  userId: t.String(),
+});
+
 // ChecklistItemRow / ChecklistRow from checklists.ts.
 export const ChecklistItemResponse = t.Object({
   id: t.Number(),
@@ -227,6 +291,7 @@ export const IssueWithFieldsResponse = t.Composite([
     parent: t.Nullable(IssueRefResponse),
     subtasks: t.Array(IssueRefResponse),
     checklists: t.Array(ChecklistResponse),
+    development: t.Array(DevelopmentLinkResponse),
   }),
 ]);
 
@@ -381,8 +446,8 @@ export const createIssueBody = t.Object({
   ),
   estimatePoints: t.Optional(EstimatePointsSchema),
   estimateMinutes: t.Optional(EstimateMinutesSchema),
-  startDate: t.Optional(t.Nullable(t.String({ description: "Start date 'YYYY-MM-DD', or null." }))),
-  dueDate: t.Optional(t.Nullable(t.String({ description: "Due date 'YYYY-MM-DD', or null." }))),
+  startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+  dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   labelIds: t.Optional(
     t.Array(t.Integer(), { description: 'Label ids to attach. From get_project.labels.' }),
   ),
@@ -400,8 +465,8 @@ export const bulkUpdateIssuesBody = t.Object({
     priority: t.Optional(t.Nullable(t.String())),
     estimatePoints: t.Optional(EstimatePointsSchema),
     estimateMinutes: t.Optional(EstimateMinutesSchema),
-    startDate: t.Optional(t.Nullable(t.String())),
-    dueDate: t.Optional(t.Nullable(t.String())),
+    startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+    dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   }),
 });
 
@@ -498,8 +563,8 @@ export const updateIssueBody = t.Object({
   ),
   estimatePoints: t.Optional(EstimatePointsSchema),
   estimateMinutes: t.Optional(EstimateMinutesSchema),
-  startDate: t.Optional(t.Nullable(t.String({ description: "Start date 'YYYY-MM-DD', or null." }))),
-  dueDate: t.Optional(t.Nullable(t.String({ description: "Due date 'YYYY-MM-DD', or null." }))),
+  startDate: t.Optional(t.Nullable(isoDate("Start date 'YYYY-MM-DD', or null."))),
+  dueDate: t.Optional(t.Nullable(isoDate("Due date 'YYYY-MM-DD', or null."))),
   labelIds: t.Optional(
     t.Array(t.Integer(), { description: "Replace the issue's labels with these ids." }),
   ),

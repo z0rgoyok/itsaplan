@@ -6,6 +6,7 @@ import { authContext } from '#shared/auth-context';
 import { requireUser } from '#shared/access';
 import { HttpError } from '#shared/lib';
 import { commonErrors } from '#shared/responses';
+import { paginate } from '#shared/pagination';
 import {
   FeedPageResponse,
   InitiativeCountsResponse,
@@ -40,35 +41,37 @@ export const initiativeRoutes = new Elysia({
   // Guard for routes that address an initiative by its own id (no :projectKey in
   // the path). Set `initiative: "<action>"` in the route options.
   .macro({
-    initiative: entityGuard('initiatives', 'Initiative not found', (p) =>
-      getInitiativeProjectId(Number(p.initiativeId)),
+    initiative: entityGuard(
+      'initiatives',
+      'Initiative not found',
+      (p) => getInitiativeProjectId(Number(p.initiativeId)),
+      'initiatives',
     ),
   })
 
   .get(
     '/projects/:projectKey/initiatives',
-    async ({ project, query }) => {
+    ({ project, query }) => {
       const statuses = query.status
         ? query.status
             .split(',')
             .map((s) => s.trim())
             .filter(Boolean)
         : undefined;
-      const page = query.page ?? 1;
-      const pageSize = query.pageSize ?? 25;
-      const { items, total } = await listInitiatives(project.id, {
-        statuses,
-        search: query.search,
-        sort: query.sort,
-        dir: query.dir,
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
-      return { items, total, page, pageSize };
+      return paginate(query, (window) =>
+        listInitiatives(project.id, {
+          statuses,
+          search: query.search,
+          sort: query.sort,
+          dir: query.dir,
+          ...window,
+        }),
+      );
     },
     {
       query: listInitiativesQuery,
       permission: ['initiatives', 'read'],
+      feature: 'initiatives',
       response: { 200: InitiativePageResponse, ...commonErrors },
       detail: {
         summary: 'List initiatives',
@@ -86,6 +89,7 @@ export const initiativeRoutes = new Elysia({
     {
       query: initiativeOptionsQuery,
       permission: ['work_items', 'read'],
+      feature: 'initiatives',
       response: { 200: InitiativeOptionListResponse, ...commonErrors },
       detail: {
         summary: 'List initiative options',
@@ -99,6 +103,7 @@ export const initiativeRoutes = new Elysia({
     async ({ project }) => initiativeStatusCounts(project.id),
     {
       permission: ['initiatives', 'read'],
+      feature: 'initiatives',
       response: { 200: InitiativeCountsResponse, ...commonErrors },
       detail: {
         summary: 'Initiative status counts',
@@ -116,6 +121,7 @@ export const initiativeRoutes = new Elysia({
     {
       body: createInitiativeBody,
       permission: ['initiatives', 'create'],
+      feature: 'initiatives',
       response: { 201: InitiativeResponse, ...commonErrors },
       detail: {
         summary: 'Create an initiative',

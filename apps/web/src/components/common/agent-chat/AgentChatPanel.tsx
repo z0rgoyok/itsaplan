@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/input-group';
 import { useTranslations } from 'next-intl';
 
+const MAX_ATTACHMENTS = 10;
+
 // The running transcript and the composer for one agent conversation. The
 // conversation state lives above this panel (in the agent chat host), so it is
 // presentational: it renders what it is given and reports sends.
@@ -41,6 +43,7 @@ export function AgentChatPanel({
   onRemovePending,
   onReset,
   composerStart,
+  composerEnd,
   hasEarlierMessages,
   isLoadingEarlier,
   onLoadEarlier,
@@ -58,6 +61,8 @@ export function AgentChatPanel({
   // Rendered at the start of the composer's button row, before the panel's own
   // buttons.
   composerStart?: ReactNode;
+  // Rendered at the end of that row, before the stop and send buttons.
+  composerEnd?: ReactNode;
   hasEarlierMessages?: boolean;
   isLoadingEarlier?: boolean;
   onLoadEarlier?: () => void;
@@ -91,20 +96,36 @@ export function AgentChatPanel({
     onSend(marker ? `${text}\n\n${marker}` : text);
   }
 
+  // The upload route takes one file per request, so a multi-file pick is sent as
+  // one request each and a file that fails does not lose the ones that succeeded.
   async function attach(files: FileList | null) {
-    const file = files?.[0];
-    if (!file || uploading) return;
+    const picked = Array.from(files ?? []);
+    if (picked.length === 0 || uploading) return;
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (attachments.length + picked.length > MAX_ATTACHMENTS) {
+      setUploadError(t('tooManyAttachments', { max: MAX_ATTACHMENTS }));
+      return;
+    }
     setUploading(true);
     setUploadError(null);
-    try {
-      const uploaded = await uploadChatAttachment(projectKey!, file);
-      setAttachments((current) => [...current, uploaded]);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t('uploadFailed'));
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    const results = await Promise.allSettled(
+      picked.map((file) => uploadChatAttachment(projectKey!, file)),
+    );
+    const uploaded: ChatAttachment[] = [];
+    const failed: string[] = [];
+    results.forEach((result, i) => {
+      if (result.status === 'fulfilled') {
+        uploaded.push(result.value);
+      } else {
+        const reason = result.reason;
+        failed.push(
+          `${picked[i].name}: ${reason instanceof Error ? reason.message : t('uploadFailed')}`,
+        );
+      }
+    });
+    setAttachments((current) => [...current, ...uploaded]);
+    setUploadError(failed.length > 0 ? failed.join('; ') : null);
+    setUploading(false);
   }
 
   return (
@@ -171,13 +192,16 @@ export function AgentChatPanel({
                     </button>
                   </span>
                 ))}
-                {uploadError && <span className="text-xs text-destructive">{uploadError}</span>}
+                {uploadError && (
+                  <span className="w-full text-xs text-destructive">{uploadError}</span>
+                )}
               </div>
             )}
             <input
               ref={fileInputRef}
               type="file"
-              accept=".xlsx,.csv,.docx"
+              accept=".xlsx,.csv,.docx,.pdf,.md,.txt"
+              multiple
               className="hidden"
               onChange={(e) => void attach(e.target.files)}
             />
@@ -216,8 +240,12 @@ export function AgentChatPanel({
                 align="block-end"
                 className="gap-1 px-2.5 pb-2"
                 // The row carries a text cursor, and its own handler focuses an
-                // `input` — this group holds a textarea.
+                // `input` — this group holds a textarea. A control of the row that
+                // opens a popover keeps this row as its React parent while rendering
+                // into a portal, so its clicks arrive here too: refocusing on those
+                // would pull the focus out of the popover and close it.
                 onClick={(e) => {
+                  if (!e.currentTarget.contains(e.target as Node)) return;
                   if ((e.target as HTMLElement).closest('button')) return;
                   e.currentTarget.parentElement?.querySelector('textarea')?.focus();
                 }}
@@ -252,6 +280,7 @@ export function AgentChatPanel({
                   </InputGroupButton>
                 )}
                 <div className="ms-auto flex items-center gap-1">
+                  {composerEnd}
                   {status !== 'ready' && (
                     <InputGroupButton
                       type="button"

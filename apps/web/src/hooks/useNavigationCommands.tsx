@@ -1,8 +1,8 @@
 import { useRouter } from 'next/navigation';
 import {
   Bell,
+  BookOpenText,
   Braces,
-  FolderKanban,
   Inbox,
   LayoutDashboard,
   Server,
@@ -14,21 +14,22 @@ import {
 import { useTranslations } from 'next-intl';
 import { useSession } from '@/lib/auth-client';
 import {
-  aiSectionPath,
+  aiAgentsPath,
   aiTeamPath,
   apiDocsPath,
   dashboardsPath,
+  documentsPath,
   godPath,
   inboxPath,
   initiativesPath,
-  manageProjectsPath,
+  manageTeamsPath,
   mcpServerPath,
   membersPath,
   notificationsPath,
   projectPath,
 } from '@/utils/paths';
 import { ACCOUNT_SECTIONS, accountPath } from '@/utils/accountSections';
-import { AI_SECTIONS, AI_TEAM_SECTIONS } from '@/utils/settingsSections';
+import { AI_AGENTS_SECTION, AI_TEAM_SECTIONS } from '@/utils/settingsSections';
 import { GOD_SECTIONS } from '@/utils/godSections';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useProjectFeatures } from '@/hooks/useProjectFeatures';
@@ -78,6 +79,14 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
     );
     if (features.initiatives && can('initiatives', 'read'))
       add('nav.initiatives', t('initiatives'), <Target />, initiativesPath(key), 'epics');
+    if (features.documents && can('documents', 'read'))
+      add(
+        'nav.documents',
+        t('documents'),
+        <BookOpenText />,
+        documentsPath(key),
+        'docs pages documentation',
+      );
     for (const s of AI_TEAM_SECTIONS) {
       if (can(s.resource, 'read'))
         add(
@@ -88,16 +97,14 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
           'ai team',
         );
     }
-    for (const s of AI_SECTIONS) {
-      if (can(s.resource, 'read'))
-        add(
-          `nav.ai.${s.slug}`,
-          sectionText(s.slug).label,
-          <s.icon />,
-          aiSectionPath(key, s.slug),
-          'ai team configure',
-        );
-    }
+    if (can(AI_AGENTS_SECTION.resource, 'read'))
+      add(
+        `nav.ai.${AI_AGENTS_SECTION.slug}`,
+        sectionText(AI_AGENTS_SECTION.slug).label,
+        <AI_AGENTS_SECTION.icon />,
+        aiAgentsPath(key),
+        'ai team agents',
+      );
     add('nav.members', t('members'), <Users />, membersPath(key), 'team people invite');
     add(
       'nav.notifications',
@@ -125,11 +132,11 @@ export function useNavigationCommands(projectKey: string | null): CommandSection
   }
 
   add(
-    'nav.manage-projects',
-    t('manageProjects'),
-    <FolderKanban />,
-    manageProjectsPath(),
-    'account leave delete copy',
+    'nav.manage-teams',
+    t('manageTeams'),
+    <Users />,
+    manageTeamsPath(),
+    'account rename leave projects delete copy',
   );
   for (const s of ACCOUNT_SECTIONS) {
     add(`nav.account.${s.slug}`, accountLabel(s.slug), <s.icon />, accountPath(s.slug), 'account');

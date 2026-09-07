@@ -51,7 +51,6 @@
         "toggle": "Open the command palette"
       },
       "project": {
-        "switch": "Switch to project 1–9",
         "new": "New project",
         "settings": "Open project settings"
       },
@@ -99,18 +98,26 @@
     "unreachable": "Could not reach the agent. Try again.",
     "runnerOffline": "Runner offline",
     "runnerOfflineHint": "Start the runner on your machine to chat with this agent.",
-    "attachFile": "Attach a spreadsheet or document for the agent to import",
+    "attachFile": "Attach a spreadsheet, document, PDF, or text file for the agent to read",
     "removeAttachment": "Remove attachment",
     "uploadFailed": "Could not upload the file.",
+    "tooManyAttachments": "You can attach up to {max} files to one message.",
     "importRows": "{count, plural, one {# row} other {# rows}}",
     "confirmImport": "Confirm import",
     "cancelImport": "Cancel",
     "importWorking": "Creating issues…",
+    "importShowAllRows": "Show all {count} rows",
+    "importShowFewerRows": "Show first {count} rows",
+    "importRowState": "Import",
+    "importRowNew": "Will be created",
+    "importSkipHint": "Rows marked ✕ are skipped on confirm.",
     "importAdjustHint": "Ask the agent to adjust the mapping if anything looks wrong.",
     "importCanceled": "This import was canceled. Nothing was created.",
     "importFailed": "The import failed.",
     "importConfirmed": "{count, plural, one {Created # issue} other {Created # issues}}",
-    "importSkippedRow": "Skipped row {row}: {reason}"
+    "importSkippedRow": "Skipped row {row}: {reason}",
+    "contextSize": "Conversation context: {count, plural, one {# token} other {# tokens}}",
+    "contextUnavailable": "The context size is not available for this agent"
   },
   "share": {
     "createFailed": "Could not create the link. Try again.",
@@ -141,6 +148,7 @@
     "initiatives": "Initiatives",
     "cycles": "Cycles",
     "dashboards": "Dashboards",
+    "documents": "Docs",
     "notes": "Notes",
     "subtasks": "Subtasks",
     "checklists": "Checklists",
@@ -167,5 +175,13 @@
   "chart": {
     "download": "Save chart",
     "downloadFailed": "The chart could not be saved"
+  },
+  "agent": "Agent",
+  "pager": {
+    "previous": "Previous page",
+    "next": "Next page",
+    "page": "Page {number}",
+    "perPage": "per page",
+    "range": "{first}-{last} of {total}"
   }
 }

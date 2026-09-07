@@ -3,13 +3,15 @@ import { authContext } from '#shared/auth-context';
 import { guards } from '#shared/guards';
 import { requireUser } from '#shared/access';
 import { noContent } from '#shared/http';
-import { HttpError } from '#shared/lib';
-import { accessErrors, commonErrors } from '#shared/responses';
+import { HttpError, rethrowDuplicate } from '#shared/lib';
+import { accessErrors, commonErrors, errors } from '#shared/responses';
 import { mcpTool } from '#mcp/generate';
+import { paginate } from '#shared/pagination';
 import { nextCronRun } from './cron';
 import {
   AgentScheduleResponse,
-  AgentScheduleListResponse,
+  AgentSchedulePageResponse,
+  agentSchedulePageQuery,
   CanceledRunsResponse,
   QueuedRunResponse,
   ScheduleRunListResponse,
@@ -19,6 +21,7 @@ import {
   updateScheduleBody,
 } from './model';
 import {
+  assertScheduleInterval,
   cancelPendingScheduleRuns,
   createAgentSchedule,
   deleteAgentSchedule,
@@ -43,13 +46,17 @@ export const agentScheduleRoutes = new Elysia({
   .use(guards)
   .get(
     '/projects/:projectKey/agent-schedules',
-    ({ project, user }) => listAgentSchedules(project.id, requireUser(user).id),
+    ({ project, user, query }) =>
+      paginate(query, (window) => listAgentSchedules(project.id, requireUser(user).id, window)),
     {
       permission: ['ai_agents', 'read'],
-      response: { 200: AgentScheduleListResponse, ...accessErrors },
+      query: agentSchedulePageQuery,
+      response: { 200: AgentSchedulePageResponse, ...accessErrors },
       detail: {
         summary: 'List agent schedules',
-        description: "List the project's agent schedules with their cron, next run, and last run.",
+        description:
+          "One page of the project's agent schedules with their cron, next run, and last " +
+          'run, newest first.',
         ...mcpTool('list_agent_schedules'),
       },
     },
@@ -58,16 +65,22 @@ export const agentScheduleRoutes = new Elysia({
     '/projects/:projectKey/agent-schedules',
     async ({ project, body, set, user }) => {
       const cron = body.cron.trim();
-      const row = await createAgentSchedule({
-        projectId: project.id,
-        agentId: body.agentId,
-        actorUserId: requireUser(user).id,
-        name: requiredText(body.name, 'Name'),
-        prompt: requiredText(body.prompt, 'Task'),
-        cron,
-        status: body.status ?? 'active',
-        nextRunAt: nextCronRun(cron),
-      });
+      await assertScheduleInterval(project.teamId, cron);
+      let row;
+      try {
+        row = await createAgentSchedule({
+          projectId: project.id,
+          agentId: body.agentId,
+          actorUserId: requireUser(user).id,
+          name: requiredText(body.name, 'Name'),
+          prompt: requiredText(body.prompt, 'Task'),
+          cron,
+          status: body.status ?? 'active',
+          nextRunAt: nextCronRun(cron),
+        });
+      } catch (err) {
+        rethrowDuplicate(err, 'schedule');
+      }
       if (!row) throw new HttpError(400, 'Select an agent from this project');
       set.status = 201;
       return row;
@@ -75,7 +88,7 @@ export const agentScheduleRoutes = new Elysia({
     {
       body: createScheduleBody,
       permission: ['ai_agents', 'create'],
-      response: { 201: AgentScheduleResponse, ...commonErrors },
+      response: { 201: AgentScheduleResponse, ...commonErrors, ...errors(409) },
       detail: {
         summary: 'Create an agent schedule',
         description: 'Create a schedule that sends a task to an agent on a cron.',
@@ -87,6 +100,7 @@ export const agentScheduleRoutes = new Elysia({
     '/projects/:projectKey/agent-schedules/:scheduleId',
     async ({ project, params, body, user }) => {
       const cron = body.cron?.trim();
+      if (cron !== undefined) await assertScheduleInterval(project.teamId, cron);
       const current = await getAgentSchedule(project.id, params.scheduleId, requireUser(user).id);
       if (!current) throw new HttpError(404, 'Schedule not found');
       // Recompute the next run when the cron changes, or when resuming a paused schedule.
@@ -94,19 +108,24 @@ export const agentScheduleRoutes = new Elysia({
       let nextRunAt: Date | undefined;
       if (cron !== undefined) nextRunAt = nextCronRun(cron);
       else if (resuming) nextRunAt = nextCronRun(current.cron);
-      const row = await updateAgentSchedule(
-        project.id,
-        params.scheduleId,
-        {
-          ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
-          ...(body.name !== undefined ? { name: requiredText(body.name, 'Name') } : {}),
-          ...(body.prompt !== undefined ? { prompt: requiredText(body.prompt, 'Task') } : {}),
-          ...(cron !== undefined ? { cron } : {}),
-          ...(nextRunAt !== undefined ? { nextRunAt } : {}),
-          ...(body.status !== undefined ? { status: body.status } : {}),
-        },
-        requireUser(user).id,
-      );
+      let row;
+      try {
+        row = await updateAgentSchedule(
+          project.id,
+          params.scheduleId,
+          {
+            ...(body.agentId !== undefined ? { agentId: body.agentId } : {}),
+            ...(body.name !== undefined ? { name: requiredText(body.name, 'Name') } : {}),
+            ...(body.prompt !== undefined ? { prompt: requiredText(body.prompt, 'Task') } : {}),
+            ...(cron !== undefined ? { cron } : {}),
+            ...(nextRunAt !== undefined ? { nextRunAt } : {}),
+            ...(body.status !== undefined ? { status: body.status } : {}),
+          },
+          requireUser(user).id,
+        );
+      } catch (err) {
+        rethrowDuplicate(err, 'schedule');
+      }
       if (!row) throw new HttpError(404, 'Schedule not found');
       return row;
     },
@@ -114,7 +133,7 @@ export const agentScheduleRoutes = new Elysia({
       params: scheduleParams,
       body: updateScheduleBody,
       permission: ['ai_agents', 'edit'],
-      response: { 200: AgentScheduleResponse, ...commonErrors },
+      response: { 200: AgentScheduleResponse, ...commonErrors, ...errors(409) },
       detail: {
         summary: 'Update an agent schedule',
         description: "Update a schedule's agent, task, cron, or status.",

@@ -203,6 +203,13 @@
   box-shadow: var(--overlay-shadow);
 }
 
+/* A tooltip is never pointed at, so it must not take the pointer from what it
+   stands over. The rule sits on the popper wrapper, not on the tooltip itself: the
+   wrapper is the box that receives the events, and pointer-events is inherited. */
+[data-radix-popper-content-wrapper]:has(> [data-slot='tooltip-content']) {
+  pointer-events: none;
+}
+
 /* Dialogs and sheets cover a far larger area, so they carry a wider, deeper cast
    than a menu. */
 [data-slot='dialog-content'],
@@ -607,13 +614,17 @@
 [dir='rtl'] .sticker-note {
   direction: rtl;
 }
-/* Sticky notes always sit on a light pastel background, so their placeholder and
-   checkboxes are keyed to dark regardless of the app theme. */
+/* Sticky notes always sit on a light pastel background, so their placeholder,
+   checkboxes and links are keyed to dark regardless of the app theme. */
 .sticker-note .md-content p.is-editor-empty:first-child::before {
   color: rgba(0, 0, 0, 0.4);
 }
 .sticker-note .md-content ul[data-type='taskList'] input[type='checkbox'] {
   accent-color: #000;
+}
+/* --primary turns near-white in dark mode, which the pastel card does not follow. */
+.sticker-note .md-content a {
+  color: inherit;
 }
 /* React Flow's default edge stroke is too dark on the canvas in both themes. */
 .react-flow__edge-path,
@@ -621,7 +632,11 @@
   stroke: var(--muted-foreground);
   stroke-width: 1.5;
 }
+/* Tailwind's preflight makes every image a block, which stacks a row of them — the
+   contributor avatars in the release notes — one per line. */
 .md-content img {
+  display: inline-block;
+  vertical-align: middle;
   max-width: 100%;
   height: auto;
   border-radius: var(--radius-md);
