@@ -10,6 +10,7 @@ import {
   uploadAndInsertImage,
   syncDocumentEditorEditable,
 } from './DocumentMarkdownEditor';
+import { pasteMarkdown } from '@/components/common/editor/pasteMarkdown';
 
 const richDocument: JSONContent = {
   type: 'doc',
@@ -66,17 +67,22 @@ let previousWindow: PropertyDescriptor | undefined;
 let previousDocument: PropertyDescriptor | undefined;
 let previousNavigator: PropertyDescriptor | undefined;
 let previousAnimationFrame: PropertyDescriptor | undefined;
+let previousNode: PropertyDescriptor | undefined;
 
 beforeEach(() => {
   previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
   previousDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
   previousNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
   previousAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
+  previousNode = Object.getOwnPropertyDescriptor(globalThis, 'Node');
   dom = new JSDOM('<!doctype html><div id="one"></div><div id="two"></div>');
+  dom.window.Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+  dom.window.Range.prototype.getBoundingClientRect = () => new dom.window.DOMRect();
   Object.defineProperties(globalThis, {
     window: { configurable: true, value: dom.window },
     document: { configurable: true, value: dom.window.document },
     navigator: { configurable: true, value: dom.window.navigator },
+    Node: { configurable: true, value: dom.window.Node },
     requestAnimationFrame: {
       configurable: true,
       value: (callback: FrameRequestCallback) => setTimeout(callback, 0),
@@ -91,6 +97,7 @@ afterEach(() => {
     ['document', previousDocument],
     ['navigator', previousNavigator],
     ['requestAnimationFrame', previousAnimationFrame],
+    ['Node', previousNode],
   ] as const) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor);
     else Reflect.deleteProperty(globalThis, name);
@@ -171,12 +178,18 @@ describe('DocumentMarkdownEditor JSON persistence', () => {
       }),
       editable: true,
     });
+    let updates = 0;
+    editor.on('update', () => {
+      updates += 1;
+    });
 
     syncDocumentEditorEditable(editor, false);
     assert.equal(editor.isEditable, false);
 
     syncDocumentEditorEditable(editor, true);
     assert.equal(editor.isEditable, true);
+    // An update here would mark the draft dirty and autosave an unedited document.
+    assert.equal(updates, 0);
     editor.destroy();
   });
 
@@ -283,5 +296,246 @@ describe('DocumentMarkdownEditor JSON persistence', () => {
     assert.equal(await insertion, false);
     assert.equal(editor.getJSON().content?.some((node) => node.type === 'image') ?? false, false);
     editor.destroy();
+  });
+});
+
+describe('DocumentMarkdownEditor markdown paste', () => {
+  const editorFor = (content?: JSONContent) =>
+    new Editor({
+      element: document.querySelector('#one') as HTMLElement,
+      extensions: documentEditorExtensions({
+        placeholder: '',
+        codeBlockLabel: 'Code',
+        tableLabel: 'Table',
+      }),
+      content,
+    });
+
+  const clipboard = (text: string, html = '') =>
+    ({ getData: (type: string) => (type === 'text/plain' ? text : html) }) as DataTransfer;
+
+  it('parses pasted text as markdown', () => {
+    const editor = editorFor();
+    assert.equal(pasteMarkdown(editor, clipboard('# Title\n\n- one\n- two')), true);
+    assert.equal(editor.storage.markdown.getMarkdown(), '# Title\n\n- one\n- two');
+    editor.destroy();
+  });
+
+  it('leaves the text to ProseMirror inside a code block', () => {
+    const editor = editorFor({ type: 'doc', content: [{ type: 'codeBlock' }] });
+    editor.commands.focus();
+    assert.equal(pasteMarkdown(editor, clipboard('# Title')), false);
+    editor.destroy();
+  });
+
+  // A copy from this editor carries the whole document shape in its HTML; the
+  // plain text beside it has lost the "#" and the "-" that make it markdown.
+  it('leaves a copy from a ProseMirror editor to ProseMirror', () => {
+    const editor = editorFor();
+    const html = '<div data-pm-slice="1 1 []"><h1>Title</h1><ul><li><p>one</p></li></ul></div>';
+    assert.equal(pasteMarkdown(editor, clipboard('Title\n\none', html)), false);
+    editor.destroy();
+  });
+});
+
+describe('DocumentMarkdownEditor schema attrs', () => {
+  // The API validates the saved JSON against a per-node allowlist and rejects the
+  // whole save on any attr it does not know, null included. This pins the schema
+  // that produces that JSON: an attr added by a tiptap upgrade fails here first,
+  // and the allowlist in apps/api documents service.ts is what has to grow.
+  it('keeps every node and mark to the attrs the API accepts', () => {
+    const editor = new Editor({
+      element: document.querySelector('#one') as HTMLElement,
+      extensions: documentEditorExtensions({
+        placeholder: '',
+        codeBlockLabel: 'Code',
+        tableLabel: 'Table',
+      }),
+    });
+
+    const attrsOf = (types: Record<string, { spec: { attrs?: object } }>) =>
+      Object.fromEntries(
+        Object.entries(types).map(([name, type]) => [
+          name,
+          Object.keys(type.spec.attrs ?? {}).sort(),
+        ]),
+      );
+    assert.deepEqual(attrsOf(editor.schema.nodes), {
+      doc: [],
+      paragraph: ['blockId', 'textAlign'],
+      text: [],
+      blockquote: ['blockId'],
+      bulletList: ['blockId', 'tight'],
+      orderedList: ['blockId', 'start', 'tight', 'type'],
+      listItem: [],
+      heading: ['blockId', 'level', 'textAlign'],
+      horizontalRule: ['blockId'],
+      hardBreak: [],
+      codeBlock: ['blockId', 'language'],
+      image: ['alt', 'blockId', 'src', 'style', 'title', 'width'],
+      table: ['blockId'],
+      tableRow: [],
+      tableHeader: ['align', 'colspan', 'colwidth', 'rowspan'],
+      tableCell: ['align', 'colspan', 'colwidth', 'rowspan'],
+      taskList: ['blockId'],
+      taskItem: ['checked'],
+    });
+    assert.deepEqual(attrsOf(editor.schema.marks), {
+      bold: [],
+      italic: [],
+      strike: [],
+      code: [],
+      link: ['class', 'href', 'rel', 'target', 'title'],
+      textStyle: ['color'],
+      underline: [],
+      highlight: ['color'],
+    });
+    editor.destroy();
+  });
+});
+
+describe('collaborative editor convergence', () => {
+  it('rebases simultaneous edits and undo without removing the other writer’s text', async () => {
+    const { Step } = await import('@tiptap/pm/transform');
+    const { collab, receiveTransaction, sendableSteps } = await import('prosemirror-collab');
+    const make = (id: string, selector: string) => {
+      const editor = new Editor({
+        element: document.querySelector(selector) as HTMLElement,
+        extensions: documentEditorExtensions({
+          placeholder: '',
+          codeBlockLabel: 'Code',
+          tableLabel: 'Table',
+        }),
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              attrs: { blockId: 'shared' },
+              content: [{ type: 'text', text: 'Hello' }],
+            },
+          ],
+        },
+      });
+      editor.registerPlugin(collab({ clientID: id }));
+      return editor;
+    };
+    const alice = make('alice', '#one'),
+      bob = make('bob', '#two');
+    alice.commands.insertContentAt(1, 'A');
+    bob.commands.insertContentAt(1, 'B');
+    const first = sendableSteps(alice.state)!;
+    for (const editor of [alice, bob])
+      editor.view.dispatch(
+        receiveTransaction(
+          editor.state,
+          first.steps.map((step) => Step.fromJSON(editor.schema, step.toJSON())),
+          first.steps.map(() => 'alice'),
+        ),
+      );
+    const second = sendableSteps(bob.state)!;
+    for (const editor of [alice, bob])
+      editor.view.dispatch(
+        receiveTransaction(
+          editor.state,
+          second.steps.map((step) => Step.fromJSON(editor.schema, step.toJSON())),
+          second.steps.map(() => 'bob'),
+        ),
+      );
+    assert.deepEqual(alice.getJSON(), bob.getJSON());
+    assert.ok(alice.getText().includes('A') && alice.getText().includes('B'));
+    alice.commands.undo();
+    const undo = sendableSteps(alice.state)!;
+    for (const editor of [alice, bob])
+      editor.view.dispatch(
+        receiveTransaction(
+          editor.state,
+          undo.steps.map((step) => Step.fromJSON(editor.schema, step.toJSON())),
+          undo.steps.map(() => 'alice'),
+        ),
+      );
+    assert.deepEqual(alice.getJSON(), bob.getJSON());
+    assert.equal(alice.getText(), 'BHello');
+    alice.destroy();
+    bob.destroy();
+  });
+
+  it('duplicates a whole section with distinct anchors', async () => {
+    const { changeDocumentBlock } = await import('../utils/documentBlocks');
+    const editor = new Editor({
+      element: document.querySelector('#one') as HTMLElement,
+      extensions: documentEditorExtensions({
+        placeholder: '',
+        codeBlockLabel: 'Code',
+        tableLabel: 'Table',
+      }),
+      content: '<h2>One</h2><p>First</p><h2>Two</h2><p>Second</p>',
+    });
+    assert.equal(changeDocumentBlock(editor, 1, 'duplicate'), true);
+    assert.equal(editor.getText(), 'One\n\nFirst\n\nOne\n\nFirst\n\nTwo\n\nSecond');
+    const ids: string[] = [];
+    editor.state.doc.forEach((node) => ids.push(node.attrs.blockId));
+    assert.equal(ids.length, new Set(ids).size);
+    assert.ok(ids.every(Boolean));
+    changeDocumentBlock(editor, 1, 'delete');
+    assert.equal(editor.getText(), 'One\n\nFirst\n\nTwo\n\nSecond');
+    changeDocumentBlock(editor, 1, 'down');
+    assert.equal(editor.getText(), 'Two\n\nSecond\n\nOne\n\nFirst');
+    changeDocumentBlock(editor, editor.state.selection.from, 'up');
+    assert.equal(editor.getText(), 'One\n\nFirst\n\nTwo\n\nSecond');
+    editor.destroy();
+  });
+});
+
+describe('collaborative block anchors', () => {
+  it('converges when both authors split the same paragraph', async () => {
+    const { Step } = await import('@tiptap/pm/transform');
+    const { collab, receiveTransaction, sendableSteps } = await import('prosemirror-collab');
+    const editors = ['one', 'two'].map((id) => {
+      const editor = new Editor({
+        element: document.querySelector(`#${id}`) as HTMLElement,
+        extensions: documentEditorExtensions({
+          placeholder: '',
+          codeBlockLabel: 'Code',
+          tableLabel: 'Table',
+        }),
+        content: {
+          type: 'doc',
+          content: [
+            {
+              type: 'paragraph',
+              attrs: { blockId: 'original' },
+              content: [{ type: 'text', text: 'Hello world' }],
+            },
+          ],
+        },
+      });
+      editor.registerPlugin(collab({ clientID: id }));
+      editor.commands.setTextSelection(6);
+      editor.commands.splitBlock();
+      return editor;
+    });
+    for (let round = 0; round < 10; round++) {
+      for (const [index, editor] of editors.entries()) {
+        const pending = sendableSteps(editor.state);
+        if (!pending) continue;
+        for (const recipient of editors)
+          recipient.view.dispatch(
+            receiveTransaction(
+              recipient.state,
+              pending.steps.map((step) => Step.fromJSON(recipient.schema, step.toJSON())),
+              pending.steps.map(() => (index ? 'two' : 'one')),
+            ),
+          );
+      }
+    }
+    assert.deepEqual(editors[0].getJSON(), editors[1].getJSON());
+    const ids: string[] = [];
+    editors[0].state.doc.forEach((node) => ids.push(node.attrs.blockId));
+    assert.ok(ids.every(Boolean));
+    assert.equal(ids.length, new Set(ids).size);
+    assert.equal(sendableSteps(editors[0].state), null);
+    assert.equal(sendableSteps(editors[1].state), null);
+    editors.forEach((editor) => editor.destroy());
   });
 });

@@ -4,6 +4,7 @@ import {
   Columns3,
   FileText,
   GitPullRequest,
+  Import,
   Info,
   ListPlus,
   type LucideIcon,
@@ -13,7 +14,7 @@ import {
   Webhook,
   Zap,
 } from 'lucide-react';
-import type { PermissionResource } from '@/lib/api';
+import type { PermissionResource } from '@/lib/api/endpoints/roles';
 
 // The sidebar group a section is listed under: the project-level general settings,
 // workflow configuration, automation/integrations, or the AI section. 'ai-team' and
@@ -101,6 +102,12 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     slug: 'git',
     icon: GitPullRequest,
     resource: 'integrations',
+    group: 'automation',
+  },
+  {
+    slug: 'import-export',
+    icon: Import,
+    resource: 'import_export',
     group: 'automation',
   },
 ];

@@ -4,7 +4,9 @@ import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import type { InviteRow, MemberKind, TeamMember } from '@/lib/api';
+import type { InviteRow } from '@/lib/api/endpoints/invites';
+import type { MemberKind } from '@/lib/api/endpoints/members';
+import type { TeamMember } from '@/lib/api/endpoints/teams';
 import {
   useDeleteTeamInvite,
   useRemoveTeamMember,
@@ -22,6 +24,7 @@ import { usePaging } from '@/hooks/usePaging';
 import SearchInput from '@/components/common/SearchInput';
 import SectionPageView from '@/components/common/page/SectionPageView';
 import ListSkeleton from '@/components/common/skeleton/ListSkeleton';
+import MembersEmptyState from '@/components/common/page/MembersEmptyState';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -94,7 +97,7 @@ export default function TeamMembersSection({ teamId }: { teamId: number }) {
         ) : undefined
       }
     >
-      <div className="space-y-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <Tabs value={kind} onValueChange={onKindChange}>
           <div className="flex items-center justify-between gap-3">
             <TabsList variant="line" className="w-auto border-b-0">
@@ -113,6 +116,8 @@ export default function TeamMembersSection({ teamId }: { teamId: number }) {
 
         {membersQuery.isPending ? (
           <ListSkeleton rows={4} rowClassName="h-12" />
+        ) : members.length === 0 && pending.length === 0 ? (
+          <MembersEmptyState kind={kind} searching={term !== undefined} />
         ) : (
           <div className="overflow-x-auto">
             <Table className="min-w-[720px] table-fixed">
@@ -162,7 +167,7 @@ export default function TeamMembersSection({ teamId }: { teamId: number }) {
           </div>
         )}
 
-        <ListPager paging={paging} total={total} />
+        {total > 0 && <ListPager paging={paging} total={total} />}
       </div>
 
       {inviting && team && (

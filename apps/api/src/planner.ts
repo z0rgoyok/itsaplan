@@ -21,6 +21,7 @@ import { cycleRoutes } from './modules/cycles';
 import { attachmentRoutes } from './modules/attachments';
 import { chatAttachmentRoutes } from './modules/chat-attachments';
 import { importRoutes } from './modules/imports';
+import { importExportRoutes } from './modules/import-export';
 import { avatarRoutes } from './modules/avatars';
 import { viewRoutes } from './modules/views';
 import { shareRoutes } from './modules/share';
@@ -43,6 +44,7 @@ import { notificationPreferenceRoutes } from './modules/notification-preferences
 import { userPreferenceRoutes } from './modules/user-preferences';
 import { telegramRoutes } from './modules/telegram';
 import { syncRoutes } from './modules/sync';
+import { linkPreviewRoutes } from './modules/link-previews';
 
 // The planner API: projects and their columns, issue types, labels, AI agents,
 // custom fields, issues, attachments, saved views, and actions. Mounted on the
@@ -103,6 +105,7 @@ export const planner = new Elysia({ name: 'planner' })
   .use(attachmentRoutes)
   .use(chatAttachmentRoutes)
   .use(importRoutes)
+  .use(importExportRoutes)
   .use(avatarRoutes)
   .use(viewRoutes)
   .use(shareRoutes)
@@ -123,5 +126,6 @@ export const planner = new Elysia({ name: 'planner' })
   .use(userPreferenceRoutes)
   .use(telegramRoutes)
   .use(syncRoutes)
+  .use(linkPreviewRoutes)
   .use(settingsRoutes)
   .use(godRoutes);

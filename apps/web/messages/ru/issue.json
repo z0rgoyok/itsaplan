@@ -140,6 +140,8 @@
     "download": "Скачать",
     "downloadFile": "Скачать {name}",
     "deleteFile": "Удалить {name}",
+    "deleteTitle": "Удалить вложение",
+    "deleteConfirmation": "Удалить {name}? Файл также будет убран из описания везде, где он встроен. Действие нельзя отменить.",
     "preview": "Посмотреть {name}",
     "remove": "Убрать {name}",
     "removeShort": "Убрать",
@@ -220,7 +222,12 @@
     "cancel": "Отмена",
     "toSend": "чтобы отправить",
     "unknownAuthor": "Неизвестный",
-    "goToLastComment": "Перейти к последнему комментарию"
+    "goToLastComment": "Перейти к последнему комментарию",
+    "edit": "Редактировать",
+    "edited": "изменено",
+    "deleteComment": "Удалить комментарий",
+    "deleteCommentTitle": "Удалить этот комментарий?",
+    "deleteCommentConfirmation": "Комментарий и ответы на него будут удалены безвозвратно."
   },
   "stats": {
     "title": "Статистика",
@@ -239,11 +246,7 @@
     "endTime": "Окончание"
   },
   "editor": {
-    "insertImage": "Вставить изображение",
-    "insertNamed": "Вставить {name}",
-    "descriptionPlaceholder": "Добавьте описание…",
-    "noImages": "Изображений пока нет. Загрузите из панели вложений или перетащите прямо в редактор.",
-    "image": "Изображение"
+    "descriptionPlaceholder": "Добавьте описание…"
   },
   "cycleSelect": {
     "label": "Цикл",
@@ -322,7 +325,9 @@
     "pullRequestOpened": "открыл(а) пул-реквест <v>{pr}</v>",
     "worklogAdded": "записал(а) <v>{time}</v> за <v>{date}</v>",
     "worklogChanged": "изменил(а) запись <v>{from}</v> за <v>{fromDate}</v> на <v>{to}</v> за <v>{date}</v>",
-    "worklogRemoved": "удалил(а) запись <v>{time}</v> за <v>{date}</v>"
+    "worklogRemoved": "удалил(а) запись <v>{time}</v> за <v>{date}</v>",
+    "commentEdited": "изменил комментарий",
+    "commentDeleted": "удалил комментарий"
   },
   "development": {
     "title": "Разработка",
@@ -384,9 +389,9 @@
     }
   },
   "documents": {
-    "title": "Docs",
-    "add": "Связать страницу Docs",
-    "empty": "Связанных страниц Docs пока нет.",
+    "title": "Документы",
+    "add": "Связать документ",
+    "empty": "Связанных документов пока нет.",
     "loadFailed": "Не удалось загрузить связанные страницы. Нажмите, чтобы повторить.",
     "remove": "Отвязать {title}",
     "untitled": "Без названия"

@@ -8,13 +8,69 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api,
   type AutoArchiveSettings,
   type EstimateSettings,
-  type NotificationPreferences,
   type ProjectFeatures,
   type SubtaskAutomationSettings,
-} from '@/lib/api';
+  getAutoArchive,
+  updateAutoArchive,
+  getSubtaskAutomation,
+  updateSubtaskAutomation,
+  updateEstimates,
+  updateProjectSettings,
+} from '@/lib/api/endpoints/settings';
+import {
+  createColumn,
+  updateColumn,
+  reorderColumns,
+  deleteColumn,
+} from '@/lib/api/endpoints/columns';
+import {
+  createCustomField,
+  updateCustomField,
+  deleteCustomField,
+} from '@/lib/api/endpoints/customFields';
+import {
+  getGitSettings,
+  updateGitSettings,
+  regenerateGitSecret,
+  listGitProviderConnections,
+  connectGitProvider,
+  disconnectGitProvider,
+  listAvailableGitRepositories,
+  connectGitRepositories,
+  disconnectGitRepository,
+} from '@/lib/api/endpoints/git';
+import {
+  type CreateImportJobInput,
+  type PlaneConnectionInput,
+  testPlaneConnection,
+  testPlaneStatesPreview,
+  createImportJob,
+  listImportJobs,
+  pauseImportJob,
+  resumeImportJob,
+  cancelImportJob,
+} from '@/lib/api/endpoints/importExport';
+import {
+  createIssueTemplate,
+  updateIssueTemplate,
+  deleteIssueTemplate,
+} from '@/lib/api/endpoints/issueTemplates';
+import { createIssueType, updateIssueType, deleteIssueType } from '@/lib/api/endpoints/issueTypes';
+import {
+  createLabel,
+  updateLabel,
+  deleteLabel,
+  createLabelGroup,
+  updateLabelGroup,
+  deleteLabelGroup,
+} from '@/lib/api/endpoints/labels';
+import {
+  type NotificationPreferences,
+  getNotificationPreferences,
+  setNotificationPreferences,
+} from '@/lib/api/endpoints/notificationPreferences';
 import { useInvalidateProject } from '@/services/projects.service';
 import { qk } from '@/services/queryKeys';
 
@@ -29,85 +85,85 @@ function useProjectMutation<TArgs>(
 }
 
 export function useCreateColumn(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createColumn>[1]) =>
-    api.createColumn(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createColumn>[1]) =>
+    createColumn(projectKey, input),
   );
 }
 
 export function useUpdateColumn(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateColumn>[2] }) =>
-      api.updateColumn(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateColumn>[2] }) =>
+      updateColumn(projectKey, id, patch),
   );
 }
 
 export function useReorderColumns(projectKey: string) {
   return useProjectMutation(projectKey, (orderedIds: number[]) =>
-    api.reorderColumns(projectKey, orderedIds),
+    reorderColumns(projectKey, orderedIds),
   );
 }
 
 export function useDeleteColumn(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, body }: { id: number; body: Parameters<typeof api.deleteColumn>[2] }) =>
-      api.deleteColumn(projectKey, id, body),
+    ({ id, body }: { id: number; body: Parameters<typeof deleteColumn>[2] }) =>
+      deleteColumn(projectKey, id, body),
   );
 }
 
 export function useCreateIssueType(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createIssueType>[1]) =>
-    api.createIssueType(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createIssueType>[1]) =>
+    createIssueType(projectKey, input),
   );
 }
 
 export function useUpdateIssueType(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateIssueType>[2] }) =>
-      api.updateIssueType(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateIssueType>[2] }) =>
+      updateIssueType(projectKey, id, patch),
   );
 }
 
 export function useDeleteIssueType(projectKey: string) {
-  return useProjectMutation(projectKey, (id: number) => api.deleteIssueType(projectKey, id));
+  return useProjectMutation(projectKey, (id: number) => deleteIssueType(projectKey, id));
 }
 
 export function useCreateLabel(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createLabel>[1]) =>
-    api.createLabel(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createLabel>[1]) =>
+    createLabel(projectKey, input),
   );
 }
 
 export function useUpdateLabel(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateLabel>[2] }) =>
-      api.updateLabel(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateLabel>[2] }) =>
+      updateLabel(projectKey, id, patch),
   );
 }
 
 export function useDeleteLabel(projectKey: string) {
-  return useProjectMutation(projectKey, (id: number) => api.deleteLabel(projectKey, id));
+  return useProjectMutation(projectKey, (id: number) => deleteLabel(projectKey, id));
 }
 
 export function useCreateLabelGroup(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createLabelGroup>[1]) =>
-    api.createLabelGroup(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createLabelGroup>[1]) =>
+    createLabelGroup(projectKey, input),
   );
 }
 
 export function useUpdateLabelGroup(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateLabelGroup>[2] }) =>
-      api.updateLabelGroup(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateLabelGroup>[2] }) =>
+      updateLabelGroup(projectKey, id, patch),
   );
 }
 
 export function useDeleteLabelGroup(projectKey: string) {
-  return useProjectMutation(projectKey, (id: number) => api.deleteLabelGroup(projectKey, id));
+  return useProjectMutation(projectKey, (id: number) => deleteLabelGroup(projectKey, id));
 }
 
 // Configuration section: the project's auto-archive thresholds and subtask
@@ -115,14 +171,14 @@ export function useDeleteLabelGroup(projectKey: string) {
 export function useAutoArchiveQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.autoArchive(projectKey),
-    queryFn: () => api.getAutoArchive(projectKey),
+    queryFn: () => getAutoArchive(projectKey),
   });
 }
 
 export function useUpdateAutoArchive(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: AutoArchiveSettings) => api.updateAutoArchive(projectKey, input),
+    mutationFn: (input: AutoArchiveSettings) => updateAutoArchive(projectKey, input),
     onSuccess: (data) => qc.setQueryData(qk.autoArchive(projectKey), data),
   });
 }
@@ -130,15 +186,14 @@ export function useUpdateAutoArchive(projectKey: string) {
 export function useSubtaskAutomationQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.subtaskAutomation(projectKey),
-    queryFn: () => api.getSubtaskAutomation(projectKey),
+    queryFn: () => getSubtaskAutomation(projectKey),
   });
 }
 
 export function useUpdateSubtaskAutomation(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: SubtaskAutomationSettings) =>
-      api.updateSubtaskAutomation(projectKey, input),
+    mutationFn: (input: SubtaskAutomationSettings) => updateSubtaskAutomation(projectKey, input),
     onSuccess: (data) => qc.setQueryData(qk.subtaskAutomation(projectKey), data),
   });
 }
@@ -147,7 +202,7 @@ export function useUpdateSubtaskAutomation(projectKey: string) {
 // detail the whole app reads them from rather than caching a payload of its own.
 export function useUpdateEstimates(projectKey: string) {
   return useProjectMutation(projectKey, (input: EstimateSettings) =>
-    api.updateEstimates(projectKey, input),
+    updateEstimates(projectKey, input),
   );
 }
 
@@ -155,15 +210,15 @@ export function useUpdateEstimates(projectKey: string) {
 export function useGitSettingsQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.gitSettings(projectKey),
-    queryFn: () => api.getGitSettings(projectKey),
+    queryFn: () => getGitSettings(projectKey),
   });
 }
 
 export function useUpdateGitSettings(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: Parameters<typeof api.updateGitSettings>[1]) =>
-      api.updateGitSettings(projectKey, patch),
+    mutationFn: (patch: Parameters<typeof updateGitSettings>[1]) =>
+      updateGitSettings(projectKey, patch),
     onSuccess: (data) => qc.setQueryData(qk.gitSettings(projectKey), data),
   });
 }
@@ -171,7 +226,7 @@ export function useUpdateGitSettings(projectKey: string) {
 export function useRegenerateGitSecret(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.regenerateGitSecret(projectKey),
+    mutationFn: () => regenerateGitSecret(projectKey),
     onSuccess: (data) => qc.setQueryData(qk.gitSettings(projectKey), data),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.gitConnections(projectKey) }),
   });
@@ -180,15 +235,15 @@ export function useRegenerateGitSecret(projectKey: string) {
 export function useGitProviderConnectionsQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.gitConnections(projectKey),
-    queryFn: () => api.listGitProviderConnections(projectKey),
+    queryFn: () => listGitProviderConnections(projectKey),
   });
 }
 
 export function useConnectGitProvider(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: Parameters<typeof api.connectGitProvider>[1]) =>
-      api.connectGitProvider(projectKey, input),
+    mutationFn: (input: Parameters<typeof connectGitProvider>[1]) =>
+      connectGitProvider(projectKey, input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.gitConnections(projectKey) }),
   });
 }
@@ -196,7 +251,7 @@ export function useConnectGitProvider(projectKey: string) {
 export function useDisconnectGitProvider(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (connectionId: number) => api.disconnectGitProvider(projectKey, connectionId),
+    mutationFn: (connectionId: number) => disconnectGitProvider(projectKey, connectionId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.gitConnections(projectKey) }),
   });
 }
@@ -210,7 +265,7 @@ export function useAvailableGitRepositoriesQuery(
   return useInfiniteQuery({
     queryKey: qk.gitAvailableRepositories(projectKey, connectionId, search),
     queryFn: ({ pageParam }) =>
-      api.listAvailableGitRepositories(projectKey, connectionId, { search, page: pageParam }),
+      listAvailableGitRepositories(projectKey, connectionId, { search, page: pageParam }),
     initialPageParam: 1,
     getNextPageParam: (page) => page.nextPage ?? undefined,
     enabled,
@@ -221,7 +276,7 @@ export function useConnectGitRepositories(projectKey: string, connectionId: numb
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (externalIds: string[]) =>
-      api.connectGitRepositories(projectKey, connectionId, externalIds),
+      connectGitRepositories(projectKey, connectionId, externalIds),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.gitConnections(projectKey) }),
   });
 }
@@ -230,8 +285,75 @@ export function useDisconnectGitRepository(projectKey: string, connectionId: num
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (repositoryId: number) =>
-      api.disconnectGitRepository(projectKey, connectionId, repositoryId),
+      disconnectGitRepository(projectKey, connectionId, repositoryId),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.gitConnections(projectKey) }),
+  });
+}
+
+// Import/export section: testing a connection to a source Plane instance,
+// starting an import job, and tracking the ones already running.
+export function useTestPlaneConnection(projectKey: string) {
+  return useMutation({
+    mutationFn: (input: PlaneConnectionInput) => testPlaneConnection(projectKey, input),
+  });
+}
+
+// Fetched automatically once a source project is picked, in the mapping review step.
+export function useTestPlaneStatesPreview(
+  projectKey: string,
+  input: (PlaneConnectionInput & { planeProjectId: string }) | null,
+) {
+  return useQuery({
+    queryKey: input
+      ? qk.planePreview(projectKey, input.planeProjectId)
+      : qk.planePreview(projectKey, 'none'),
+    queryFn: () => testPlaneStatesPreview(projectKey, input!),
+    enabled: input != null,
+  });
+}
+
+export function useCreateImportJob(projectKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateImportJobInput) => createImportJob(projectKey, input),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.importJobs(projectKey) }),
+  });
+}
+
+// Polled while a job is still pending or running, the same shape as
+// useAgentScheduleRuns.
+export function useImportJobsQuery(projectKey: string) {
+  return useQuery({
+    queryKey: qk.importJobs(projectKey),
+    queryFn: () => listImportJobs(projectKey),
+    refetchInterval: (query) =>
+      query.state.data?.some((job) => job.status === 'running' || job.status === 'pending')
+        ? 2000
+        : false,
+  });
+}
+
+export function usePauseImportJob(projectKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => pauseImportJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.importJobs(projectKey) }),
+  });
+}
+
+export function useResumeImportJob(projectKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => resumeImportJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.importJobs(projectKey) }),
+  });
+}
+
+export function useCancelImportJob(projectKey: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => cancelImportJob(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.importJobs(projectKey) }),
   });
 }
 
@@ -242,7 +364,7 @@ export function useUpdateProjectFeatures(projectKey: string) {
   const invalidate = useInvalidateProject(projectKey);
   return useMutation({
     mutationFn: (input: Partial<ProjectFeatures>) =>
-      api.updateProjectSettings(projectKey, { features: input }),
+      updateProjectSettings(projectKey, { features: input }),
     onSuccess: () => invalidate(),
   });
 }
@@ -252,15 +374,14 @@ export function useUpdateProjectFeatures(projectKey: string) {
 export function useNotificationPreferencesQuery(projectKey: string) {
   return useQuery({
     queryKey: qk.notificationPreferences(projectKey),
-    queryFn: () => api.getNotificationPreferences(projectKey),
+    queryFn: () => getNotificationPreferences(projectKey),
   });
 }
 
 export function useUpdateNotificationPreferences(projectKey: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: NotificationPreferences) =>
-      api.setNotificationPreferences(projectKey, input),
+    mutationFn: (input: NotificationPreferences) => setNotificationPreferences(projectKey, input),
     onSuccess: (data) => qc.setQueryData(qk.notificationPreferences(projectKey), data),
   });
 }
@@ -268,39 +389,39 @@ export function useUpdateNotificationPreferences(projectKey: string) {
 // Custom fields. Writes go through the project-scoped endpoint; the shared
 // invalidation also refreshes the custom-field lists the reads depend on.
 export function useCreateCustomField(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createCustomField>[1]) =>
-    api.createCustomField(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createCustomField>[1]) =>
+    createCustomField(projectKey, input),
   );
 }
 
 export function useUpdateCustomField(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateCustomField>[2] }) =>
-      api.updateCustomField(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateCustomField>[2] }) =>
+      updateCustomField(projectKey, id, patch),
   );
 }
 
 export function useDeleteCustomField(projectKey: string) {
-  return useProjectMutation(projectKey, (id: number) => api.deleteCustomField(projectKey, id));
+  return useProjectMutation(projectKey, (id: number) => deleteCustomField(projectKey, id));
 }
 
 // Issue templates. The project detail carries the list, so the writes only have to
 // invalidate it.
 export function useCreateIssueTemplate(projectKey: string) {
-  return useProjectMutation(projectKey, (input: Parameters<typeof api.createIssueTemplate>[1]) =>
-    api.createIssueTemplate(projectKey, input),
+  return useProjectMutation(projectKey, (input: Parameters<typeof createIssueTemplate>[1]) =>
+    createIssueTemplate(projectKey, input),
   );
 }
 
 export function useUpdateIssueTemplate(projectKey: string) {
   return useProjectMutation(
     projectKey,
-    ({ id, patch }: { id: number; patch: Parameters<typeof api.updateIssueTemplate>[2] }) =>
-      api.updateIssueTemplate(projectKey, id, patch),
+    ({ id, patch }: { id: number; patch: Parameters<typeof updateIssueTemplate>[2] }) =>
+      updateIssueTemplate(projectKey, id, patch),
   );
 }
 
 export function useDeleteIssueTemplate(projectKey: string) {
-  return useProjectMutation(projectKey, (id: number) => api.deleteIssueTemplate(projectKey, id));
+  return useProjectMutation(projectKey, (id: number) => deleteIssueTemplate(projectKey, id));
 }

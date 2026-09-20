@@ -2,7 +2,7 @@ import { Elysia } from 'elysia';
 import { db } from '@repo/db';
 import { user as users } from '@repo/db/schema';
 import { eq } from 'drizzle-orm';
-import { auth } from '@repo/auth';
+import { auth, getSessionFromHeaders } from '@repo/auth';
 import { HttpError } from './lib';
 import { getMcpOAuthToken } from './mcp-request';
 
@@ -13,7 +13,7 @@ import { getMcpOAuthToken } from './mcp-request';
 // GET renders a public read-only shared issue or view, keyed by an unguessable
 // token. All ids are unguessable.
 const PUBLIC_GET =
-  /^\/attachments\/[^/]+\/raw$|^\/chat-attachments\/[^/]+\/raw$|^\/avatars\/[^/]+\/raw$|^\/invites\/[^/]+$|^\/share\//;
+  /^\/attachments\/[^/]+\/raw$|^\/chat-attachments\/[^/]+\/raw$|^\/initiative-attachments\/[^/]+\/raw$|^\/avatars\/[^/]+\/raw$|^\/invites\/[^/]+$|^\/share\//;
 
 type SessionResult = NonNullable<Awaited<ReturnType<typeof auth.api.getSession>>>;
 
@@ -36,7 +36,7 @@ export type SessionUser = SessionResult['user'];
 export const authContext = new Elysia({ name: 'auth-context' }).resolve(
   { as: 'scoped' },
   async ({ request, path }): Promise<{ user: SessionUser | null }> => {
-    const session = await auth.api.getSession({ headers: request.headers });
+    const session = await getSessionFromHeaders(request.headers);
     if (session) {
       if (session.user.active === false) throw new HttpError(401, 'This account is deactivated');
       return { user: session.user };

@@ -15,6 +15,10 @@
       "label": "用户",
       "description": "此实例中的所有账户，包括全局角色、邮箱验证状态和各用户可访问的项目。"
     },
+    "teams": {
+      "label": "团队",
+      "description": "实例中的所有团队：拥有哪些项目，以及谁属于它。"
+    },
     "projects": {
       "label": "项目",
       "description": "此实例中的所有项目，包括项目内容、最近活动时间和访问成员。"
@@ -97,9 +101,13 @@
       "label": "仓库",
       "description": "当关联的拉取请求在 GitHub、GitLab、Gitea、Forgejo 或 Bitbucket 上合并时关闭工作项。"
     },
+    "import-export": {
+      "label": "导入/导出",
+      "description": "从自托管的 Plane 实例导入工作项、评论和标签，或将该项目的数据导出为 JSON。"
+    },
     "ai-agents": {
-      "label": "AI 队友",
-      "description": "在该项目中工作的 AI 队友。"
+      "label": "AI 代理",
+      "description": "在该项目中工作的 AI 代理。"
     }
   }
 }

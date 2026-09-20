@@ -1,13 +1,27 @@
 import {
   db,
   documentAsset,
+  documentCollaboration,
+  documentComment,
   project,
   projectDocument,
   projectDocumentPreference,
   projectDocumentRevision,
   projectMember,
 } from '@repo/db';
-import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import {
+  getTableColumns,
+  and,
+  asc,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { HttpError, iso } from '#shared/lib';
 import {
   assertAttachmentStorageCapacity,
@@ -242,8 +256,13 @@ export async function listDocuments(
       or(ilike(projectDocument.title, `%${term}%`), ilike(projectDocument.content, `%${term}%`)),
     );
   }
+  const {
+    content: _content,
+    contentJson: _contentJson,
+    ...columns
+  } = getTableColumns(projectDocument);
   const rows = await db
-    .select()
+    .select(columns)
     .from(projectDocument)
     .where(and(...conditions))
     .orderBy(asc(projectDocument.position), asc(projectDocument.id));
@@ -254,7 +273,7 @@ export async function listDocuments(
     rows.map((row) => row.id),
   );
   return rows.map((row) => ({
-    ...summaryOf(row, favorites.has(row.id)),
+    ...summaryOf({ ...row, content: '', contentJson: null }, favorites.has(row.id)),
     parentId: row.parentId !== null && visibleIds.has(row.parentId) ? row.parentId : null,
   }));
 }
@@ -651,6 +670,8 @@ const DOCUMENT_MARK_TYPES = new Set([
   'highlight',
 ]);
 
+const TEXT_ALIGN = ['left', 'center', 'right'] as const;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -676,9 +697,29 @@ function assertAllowedAttributes(
   allowed: readonly string[],
   context: string,
 ): void {
-  const allowedKeys = new Set(allowed);
+  const allowedKeys = new Set([...allowed, 'blockId']);
+  if (
+    attrs.blockId != null &&
+    (typeof attrs.blockId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(attrs.blockId))
+  )
+    throw new HttpError(400, 'Invalid document block identifier.');
   const unknown = Object.keys(attrs).find((key) => !allowedKeys.has(key));
   if (unknown) throw new HttpError(400, `${context} contains an unsupported "${unknown}" attr.`);
+}
+
+function assertOptionalBoolean(value: unknown, context: string): void {
+  if (value != null && typeof value !== 'boolean') {
+    throw new HttpError(400, `${context} must be a boolean.`);
+  }
+}
+
+function assertOptionalOneOf(value: unknown, allowed: readonly string[], context: string): void {
+  if (value == null || allowed.includes(String(value))) return;
+  const list =
+    allowed.length < 3
+      ? allowed.join(' or ')
+      : `${allowed.slice(0, -1).join(', ')}, or ${allowed[allowed.length - 1]}`;
+  throw new HttpError(400, `${context} must be ${list}.`);
 }
 
 function assertOptionalBoundedString(value: unknown, maximum: number, context: string): void {
@@ -764,24 +805,14 @@ function assertDocumentNodeAttributes(node: Record<string, unknown>): void {
   switch (node.type) {
     case 'paragraph':
       assertAllowedAttributes(attrs, ['textAlign'], 'A paragraph');
-      if (
-        attrs.textAlign != null &&
-        !['left', 'center', 'right'].includes(String(attrs.textAlign))
-      ) {
-        throw new HttpError(400, 'Paragraph textAlign must be left, center, or right.');
-      }
+      assertOptionalOneOf(attrs.textAlign, TEXT_ALIGN, 'Paragraph textAlign');
       return;
     case 'heading':
       assertAllowedAttributes(attrs, ['level', 'textAlign'], 'A heading');
       if (!Number.isInteger(attrs.level) || Number(attrs.level) < 1 || Number(attrs.level) > 6) {
         throw new HttpError(400, 'Heading level must be an integer from 1 to 6.');
       }
-      if (
-        attrs.textAlign != null &&
-        !['left', 'center', 'right'].includes(String(attrs.textAlign))
-      ) {
-        throw new HttpError(400, 'Heading textAlign must be left, center, or right.');
-      }
+      assertOptionalOneOf(attrs.textAlign, TEXT_ALIGN, 'Heading textAlign');
       return;
     case 'image': {
       assertAllowedAttributes(attrs, ['src', 'alt', 'title', 'width', 'style'], 'An image');
@@ -810,7 +841,8 @@ function assertDocumentNodeAttributes(node: Record<string, unknown>): void {
       return;
     case 'tableCell':
     case 'tableHeader': {
-      assertAllowedAttributes(attrs, ['colspan', 'rowspan', 'colwidth'], 'A table cell');
+      assertAllowedAttributes(attrs, ['colspan', 'rowspan', 'colwidth', 'align'], 'A table cell');
+      assertOptionalOneOf(attrs.align, TEXT_ALIGN, 'Table cell align');
       for (const key of ['colspan', 'rowspan'] as const) {
         const span = attrs[key];
         if (
@@ -833,8 +865,14 @@ function assertDocumentNodeAttributes(node: Record<string, unknown>): void {
       }
       return;
     }
+    case 'bulletList':
+      assertAllowedAttributes(attrs, ['tight'], 'A bullet list');
+      assertOptionalBoolean(attrs.tight, 'List tight');
+      return;
     case 'orderedList':
-      assertAllowedAttributes(attrs, ['start'], 'An ordered list');
+      assertAllowedAttributes(attrs, ['start', 'tight', 'type'], 'An ordered list');
+      assertOptionalBoolean(attrs.tight, 'List tight');
+      assertOptionalOneOf(attrs.type, ['a', 'A', 'i', 'I', '1'], 'Ordered-list type');
       if (
         attrs.start !== undefined &&
         (!Number.isInteger(attrs.start) ||
@@ -857,11 +895,10 @@ function assertDocumentMarkAttributes(mark: Record<string, unknown>): void {
   const attrs = documentAttributes(mark);
   switch (mark.type) {
     case 'link':
-      assertAllowedAttributes(attrs, ['href', 'target', 'rel', 'class'], 'A link');
+      assertAllowedAttributes(attrs, ['href', 'target', 'rel', 'class', 'title'], 'A link');
+      assertOptionalBoundedString(attrs.title, 1_000, 'Link title');
       assertSafeLinkHref(attrs.href);
-      if (attrs.target != null && !['_blank', '_self'].includes(String(attrs.target))) {
-        throw new HttpError(400, 'Link target must be _blank or _self.');
-      }
+      assertOptionalOneOf(attrs.target, ['_blank', '_self'], 'Link target');
       assertOptionalBoundedString(attrs.rel, 200, 'Link rel');
       if (typeof attrs.rel === 'string' && !/^[a-z -]*$/i.test(attrs.rel)) {
         throw new HttpError(400, 'Link rel contains unsupported characters.');
@@ -986,7 +1023,11 @@ export async function updateDocument(
       .set({
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.content !== undefined ? { content: input.content } : {}),
-        ...(input.contentJson !== undefined ? { contentJson: input.contentJson } : {}),
+        ...(input.contentJson !== undefined
+          ? { contentJson: input.contentJson }
+          : input.content !== undefined
+            ? { contentJson: null }
+            : {}),
         ...(input.icon !== undefined ? { icon: input.icon } : {}),
         ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
         ...(input.fullWidth !== undefined ? { fullWidth: input.fullWidth } : {}),
@@ -1006,6 +1047,15 @@ export async function updateDocument(
       .returning();
     if (!row) {
       throw new HttpError(409, 'This document changed elsewhere. Reload it before continuing.');
+    }
+    if (input.content !== undefined || input.contentJson !== undefined) {
+      await tx
+        .delete(documentCollaboration)
+        .where(eq(documentCollaboration.documentId, documentId));
+      await tx
+        .update(documentComment)
+        .set({ orphaned: true })
+        .where(eq(documentComment.documentId, documentId));
     }
     if (movePlan) {
       // Position normalization is implementation detail, not user-visible page
@@ -1586,6 +1636,11 @@ export async function restoreDocumentRevision(
     if (!row) {
       throw new HttpError(409, 'This document changed elsewhere. Reload it before continuing.');
     }
+    await tx.delete(documentCollaboration).where(eq(documentCollaboration.documentId, documentId));
+    await tx
+      .update(documentComment)
+      .set({ orphaned: true })
+      .where(eq(documentComment.documentId, documentId));
     return mapDocumentForUser(tx, row, userId);
   });
 }

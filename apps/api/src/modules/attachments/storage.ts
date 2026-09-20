@@ -1,80 +1,37 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
-  chatAttachment,
   db,
-  documentAsset,
-  issue,
-  issueAttachment,
-  project,
-  projectDocument,
+  type DbExecutor,
+  getStorageSettings,
+  mimeAllowed,
+  MB,
+  projectStoredBytes,
+  projectTeamId,
+  teamStoredBytes,
 } from '@repo/db';
-import { eq, sql } from 'drizzle-orm';
-import { putObject, getObject, deleteObject } from '#shared/s3';
-import { HttpError, num } from '#shared/lib';
-import { getStorageSettings, mimeAllowed, MB } from '#modules/settings/service';
+import { putObject, getObject, deleteObject } from '@repo/storage';
+import { HttpError } from '#shared/lib';
 import { getLimits } from '#shared/limits';
 
-export type AttachmentStorageExecutor =
-  typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-const ATTACHMENT_QUOTA_LOCK_NAMESPACE = 1_145_390_932;
-
-async function projectStoredBytes(
-  executor: AttachmentStorageExecutor,
-  projectId: number,
-): Promise<number> {
-  // Keep these sequential: callers commonly pass a transaction-bound executor,
-  // and all three reads must observe the same post-lock snapshot/connection.
-  const issues = await executor
-    .select({ total: sql<string>`coalesce(sum(${issueAttachment.sizeBytes}), 0)` })
-    .from(issueAttachment)
-    .innerJoin(issue, eq(issue.id, issueAttachment.issueId))
-    .where(eq(issue.projectId, projectId));
-  const chats = await executor
-    .select({ total: sql<string>`coalesce(sum(${chatAttachment.sizeBytes}), 0)` })
-    .from(chatAttachment)
-    .where(eq(chatAttachment.projectId, projectId));
-  const documents = await executor
-    .select({ total: sql<string>`coalesce(sum(${documentAsset.sizeBytes}), 0)` })
-    .from(documentAsset)
-    .innerJoin(projectDocument, eq(projectDocument.id, documentAsset.documentId))
-    .where(eq(projectDocument.projectId, projectId));
-  return num(issues[0]?.total ?? 0) + num(chats[0]?.total ?? 0) + num(documents[0]?.total ?? 0);
-}
-
-async function teamStoredBytes(
-  executor: AttachmentStorageExecutor,
-  teamId: number,
-): Promise<number> {
-  const issues = await executor
-    .select({ total: sql<string>`coalesce(sum(${issueAttachment.sizeBytes}), 0)` })
-    .from(issueAttachment)
-    .innerJoin(issue, eq(issue.id, issueAttachment.issueId))
-    .innerJoin(project, eq(project.id, issue.projectId))
-    .where(eq(project.teamId, teamId));
-  const chats = await executor
-    .select({ total: sql<string>`coalesce(sum(${chatAttachment.sizeBytes}), 0)` })
-    .from(chatAttachment)
-    .innerJoin(project, eq(project.id, chatAttachment.projectId))
-    .where(eq(project.teamId, teamId));
-  const documents = await executor
-    .select({ total: sql<string>`coalesce(sum(${documentAsset.sizeBytes}), 0)` })
-    .from(documentAsset)
-    .innerJoin(projectDocument, eq(projectDocument.id, documentAsset.documentId))
-    .innerJoin(project, eq(project.id, projectDocument.projectId))
-    .where(eq(project.teamId, teamId));
-  return num(issues[0]?.total ?? 0) + num(chats[0]?.total ?? 0) + num(documents[0]?.total ?? 0);
-}
+// Re-exported so this stays the one place every attachment-owning module (issue,
+// chat, document, initiative) imports the key/filename helpers from — the
+// functions themselves live in @repo/storage so the worker can use them too.
+export { safeAttachmentFilename, attachmentObjectKey } from '@repo/storage';
+// Same reasoning: the worker takes this same advisory lock (by the same
+// namespace constant) before it checks an imported attachment against the
+// project's quota, so the two processes actually contend on one lock rather
+// than each thinking it has exclusive access.
+export { lockAttachmentStorage } from '@repo/db';
 
 export async function assertAttachmentStorageCapacity(
   projectId: number,
   addedBytes: number,
   replacedBytes = 0,
-  executor: AttachmentStorageExecutor = db,
+  executor: DbExecutor = db,
 ): Promise<void> {
   const limits = await getStorageSettings();
   if (limits.projectQuotaMb > 0) {
-    const used = (await projectStoredBytes(executor, projectId)) - replacedBytes;
+    const used = (await projectStoredBytes(projectId, executor)) - replacedBytes;
     if (used + addedBytes > limits.projectQuotaMb * MB) {
       throw new HttpError(
         413,
@@ -85,15 +42,11 @@ export async function assertAttachmentStorageCapacity(
   // The instance quota above is per project; a team may hold a ceiling of its own
   // across all of them. The team is read through the same executor: a project copy
   // checks the quota of a project its own transaction has not committed yet.
-  const [owner] = await executor
-    .select({ teamId: project.teamId })
-    .from(project)
-    .where(eq(project.id, projectId));
-  if (!owner) throw new HttpError(404, 'Project not found');
-  const teamId = owner.teamId;
+  const teamId = await projectTeamId(projectId, executor);
+  if (teamId == null) throw new HttpError(404, 'Project not found');
   const { maxStorageBytes } = await getLimits({ teamId });
   if (maxStorageBytes > 0) {
-    const used = (await teamStoredBytes(executor, teamId)) - replacedBytes;
+    const used = (await teamStoredBytes(teamId, executor)) - replacedBytes;
     if (used + addedBytes > maxStorageBytes) {
       throw new HttpError(
         413,
@@ -101,15 +54,6 @@ export async function assertAttachmentStorageCapacity(
       );
     }
   }
-}
-
-export async function lockAttachmentStorage(
-  executor: AttachmentStorageExecutor,
-  projectId: number,
-): Promise<void> {
-  await executor.execute(
-    sql`select pg_advisory_xact_lock(${ATTACHMENT_QUOTA_LOCK_NAMESPACE}, ${projectId})`,
-  );
 }
 
 export async function assertAttachmentUploadAllowed(
@@ -133,32 +77,6 @@ export async function assertAttachmentFileAllowed(
   if (!mimeAllowed(contentType, limits.attachmentMimeTypes)) {
     throw new HttpError(400, `Files of type "${contentType}" are not accepted on this instance`);
   }
-}
-
-export function safeAttachmentFilename(input: string, fallback = 'file'): string {
-  const basename = input.split(/[\\/]/).pop() ?? '';
-  const printable = [...basename]
-    .map((character) => {
-      const code = character.charCodeAt(0);
-      return code < 32 || code === 127 ? '_' : character;
-    })
-    .join('')
-    .trim();
-  const filename = printable.slice(-255);
-  return filename && filename !== '.' && filename !== '..' ? filename : fallback;
-}
-
-export function attachmentObjectKey(
-  projectId: number,
-  namespace: 'attachments' | 'chat' | 'documents',
-  ownerId: number | null,
-  filename: string,
-): string {
-  const safeName = safeAttachmentFilename(filename)
-    .replace(/[^\w.-]+/g, '_')
-    .slice(-100);
-  const ownerPath = ownerId === null ? '' : `${ownerId}/`;
-  return `projects/${projectId}/${namespace}/${ownerPath}${randomUUID()}-${safeName}`;
 }
 
 export async function storeAttachmentObject(
@@ -227,4 +145,57 @@ export function attachmentResponseHeaders(input: {
   if (input.contentLength !== undefined) headers['Content-Length'] = String(input.contentLength);
   if (!inline) headers['Content-Security-Policy'] = "default-src 'none'; sandbox";
   return headers;
+}
+
+// An embed of a deleted attachment left in markdown would 404 once the object is
+// gone. Strip any construct whose URL carries this attachment's publicId: a
+// markdown image/link, or an inline <img>/<video>. The publicId is a uuid, so a
+// URL substring match is specific to this one attachment.
+export function stripAttachmentEmbeds(text: string, publicId: string): string {
+  const id = publicId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text
+    .replace(new RegExp(`!?\\[[^\\]]*\\]\\([^)]*${id}[^)]*\\)`, 'g'), '')
+    .replace(new RegExp(`<img\\b[^>]*${id}[^>]*>`, 'g'), '')
+    .replace(new RegExp(`<video\\b[^>]*${id}[^>]*>(?:\\s*</video>)?`, 'g'), '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+// The body of a public raw-download route. The bytes behind a publicId can be
+// replaced, so the response is revalidated instead of cached for good: every write
+// stores the file under a key with a fresh uuid, so a digest of the key changes
+// with the bytes. It is the digest, not the key, because these routes are public
+// and the key carries the project id, the owner id and the stored filename.
+//
+// The bytes and their content type are attacker-controlled, and the routes are
+// public and same-origin as the planner UI, so serving an HTML or SVG file inline
+// would be stored XSS. attachmentResponseHeaders is what keeps them inert.
+export async function attachmentObjectResponse(input: {
+  s3Key: string;
+  contentType: string;
+  filename: string;
+  request: Request;
+  download: boolean;
+}): Promise<Response> {
+  const etag = attachmentEtag(input.s3Key);
+  if (input.request.headers.get('if-none-match') === etag) {
+    return new Response(null, { status: 304, headers: { ETag: etag } });
+  }
+
+  let obj;
+  try {
+    obj = await getObject(input.s3Key);
+  } catch (err) {
+    throw new HttpError(404, err instanceof Error ? err.message : 'Object not found');
+  }
+
+  return new Response(obj.body, {
+    headers: attachmentResponseHeaders({
+      contentType: input.contentType || obj.contentType,
+      filename: input.filename,
+      contentLength: obj.contentLength,
+      etag,
+      download: input.download,
+    }),
+  });
 }

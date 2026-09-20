@@ -140,6 +140,8 @@
     "download": "تنزيل",
     "downloadFile": "تنزيل {name}",
     "deleteFile": "حذف {name}",
+    "deleteTitle": "حذف المرفق",
+    "deleteConfirmation": "حذف {name}؟ سيُزال أيضًا من الوصف في كل موضع مضمَّن فيه. لا يمكن التراجع عن ذلك.",
     "preview": "معاينة {name}",
     "remove": "إزالة {name}",
     "removeShort": "إزالة",
@@ -220,7 +222,12 @@
     "cancel": "إلغاء",
     "toSend": "للإرسال",
     "unknownAuthor": "غير معروف",
-    "goToLastComment": "الانتقال إلى آخر تعليق"
+    "goToLastComment": "الانتقال إلى آخر تعليق",
+    "edit": "تعديل",
+    "edited": "تم التعديل",
+    "deleteComment": "حذف التعليق",
+    "deleteCommentTitle": "حذف هذا التعليق؟",
+    "deleteCommentConfirmation": "سيتم حذف التعليق وجميع ردوده نهائيًا."
   },
   "stats": {
     "title": "الإحصاءات",
@@ -239,11 +246,7 @@
     "endTime": "وقت الانتهاء"
   },
   "editor": {
-    "insertImage": "إدراج صورة",
-    "insertNamed": "إدراج {name}",
-    "descriptionPlaceholder": "إضافة وصف…",
-    "noImages": "مفيش صور مرفقة لسه. ارفع صورة من لوحة المرفقات، أو ارميها على المحرر على طول.",
-    "image": "صورة"
+    "descriptionPlaceholder": "إضافة وصف…"
   },
   "cycleSelect": {
     "label": "الدورة",
@@ -322,7 +325,9 @@
     "pullRequestOpened": "فتح طلب السحب <v>{pr}</v>",
     "worklogAdded": "سجّل <v>{time}</v> ليوم <v>{date}</v>",
     "worklogChanged": "غيّر التسجيل من <v>{from}</v> ليوم <v>{fromDate}</v> إلى <v>{to}</v> ليوم <v>{date}</v>",
-    "worklogRemoved": "حذف تسجيل <v>{time}</v> ليوم <v>{date}</v>"
+    "worklogRemoved": "حذف تسجيل <v>{time}</v> ليوم <v>{date}</v>",
+    "commentEdited": "عدّل تعليقًا",
+    "commentDeleted": "حذف تعليقًا"
   },
   "development": {
     "title": "التطوير",
@@ -384,9 +389,9 @@
     }
   },
   "documents": {
-    "title": "Docs",
-    "add": "ربط صفحة Docs",
-    "empty": "لا توجد صفحات Docs مرتبطة بعد.",
+    "title": "المستندات",
+    "add": "ربط مستند",
+    "empty": "لا توجد مستندات مرتبطة بعد.",
     "loadFailed": "تعذر تحميل الصفحات المرتبطة. انقر لإعادة المحاولة.",
     "remove": "إلغاء ربط {title}",
     "untitled": "بلا عنوان"

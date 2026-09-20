@@ -140,6 +140,8 @@
     "download": "Télécharger",
     "downloadFile": "Télécharger {name}",
     "deleteFile": "Supprimer {name}",
+    "deleteTitle": "Supprimer la pièce jointe",
+    "deleteConfirmation": "Supprimer {name} ? Le fichier est aussi retiré de la description partout où il est intégré. Cette action est irréversible.",
     "preview": "Aperçu de {name}",
     "remove": "Retirer {name}",
     "removeShort": "Retirer",
@@ -220,7 +222,12 @@
     "cancel": "Annuler",
     "toSend": "pour envoyer",
     "unknownAuthor": "Inconnu",
-    "goToLastComment": "Aller au dernier commentaire"
+    "goToLastComment": "Aller au dernier commentaire",
+    "edit": "Modifier",
+    "edited": "modifié",
+    "deleteComment": "Supprimer le commentaire",
+    "deleteCommentTitle": "Supprimer ce commentaire ?",
+    "deleteCommentConfirmation": "Le commentaire et ses réponses seront définitivement supprimés."
   },
   "stats": {
     "title": "Statistiques",
@@ -239,11 +246,7 @@
     "endTime": "Heure de fin"
   },
   "editor": {
-    "insertImage": "Insérer une image",
-    "insertNamed": "Insérer {name}",
-    "descriptionPlaceholder": "Ajouter une description…",
-    "noImages": "Aucune image jointe pour l'instant. Envoyez-en une depuis le panneau Pièces jointes, ou déposez-la directement dans l'éditeur.",
-    "image": "Image"
+    "descriptionPlaceholder": "Ajouter une description…"
   },
   "cycleSelect": {
     "label": "Cycle",
@@ -322,7 +325,9 @@
     "pullRequestOpened": "a ouvert la pull request <v>{pr}</v>",
     "worklogAdded": "a enregistré <v>{time}</v> le <v>{date}</v>",
     "worklogChanged": "a remplacé les <v>{from}</v> enregistrées le <v>{fromDate}</v> par <v>{to}</v> le <v>{date}</v>",
-    "worklogRemoved": "a supprimé les <v>{time}</v> enregistrées le <v>{date}</v>"
+    "worklogRemoved": "a supprimé les <v>{time}</v> enregistrées le <v>{date}</v>",
+    "commentEdited": "a modifié un commentaire",
+    "commentDeleted": "a supprimé un commentaire"
   },
   "development": {
     "title": "Développement",
@@ -384,9 +389,9 @@
     }
   },
   "documents": {
-    "title": "Docs",
-    "add": "Lier une page Docs",
-    "empty": "Aucune page Docs liée.",
+    "title": "Documents",
+    "add": "Lier un document",
+    "empty": "Aucun document lié.",
     "loadFailed": "Impossible de charger les pages liées. Cliquez pour réessayer.",
     "remove": "Dissocier {title}",
     "untitled": "Sans titre"

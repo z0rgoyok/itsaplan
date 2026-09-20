@@ -3,15 +3,15 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import type { MemberKind, MemberRow as Member } from '@/lib/api';
+import type { MemberKind, MemberRow as Member } from '@/lib/api/endpoints/members';
 import ConfirmDialog from '@/components/common/overlay/ConfirmDialog';
 import ListSkeleton from '@/components/common/skeleton/ListSkeleton';
-import { EmptyState } from '@/components/common/page/EmptyState';
+import MembersEmptyState from '@/components/common/page/MembersEmptyState';
 import SearchInput from '@/components/common/SearchInput';
 import { Table, TableBody, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useMembersQuery, useRemoveMember } from '@/services/members.service';
-import { useTeamRolesQuery } from '@/services/roles.service';
+import { useTeamRoleOptionsQuery } from '@/services/roles.service';
 import { useSearchTerm } from '@/hooks/useSearchTerm';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useSession } from '@/lib/auth-client';
@@ -42,7 +42,7 @@ export default function MembersList({
   // Roles feed the per-member role select, so the list is only fetched for a reader
   // who gets one.
   const canEdit = can('members_manage', 'edit') || isAdmin;
-  const rolesQuery = useTeamRolesQuery(canEdit ? teamId : null);
+  const rolesQuery = useTeamRoleOptionsQuery(canEdit ? teamId : null);
   const router = useRouter();
   const [target, setTarget] = useState<Member | null>(null);
 
@@ -88,7 +88,7 @@ export default function MembersList({
   }
 
   return (
-    <div className="mb-8 space-y-4">
+    <div className="mb-8 flex min-h-0 flex-1 flex-col gap-4">
       <Tabs value={kind} onValueChange={onKindChange}>
         <div className="flex items-center justify-between gap-3">
           <TabsList variant="line" className="w-auto border-b-0">
@@ -106,7 +106,7 @@ export default function MembersList({
       </Tabs>
 
       {members.length === 0 ? (
-        <EmptyState title={t('emptyTitle')} description={t('emptyDescription')} />
+        <MembersEmptyState kind={kind} searching={term !== undefined} />
       ) : (
         <Table className="min-w-[720px] table-fixed">
           <colgroup>
@@ -150,7 +150,7 @@ export default function MembersList({
         </Table>
       )}
 
-      <ListPager paging={paging} total={total} />
+      {total > 0 && <ListPager paging={paging} total={total} />}
 
       {target && (
         <ConfirmDialog

@@ -7,7 +7,7 @@ import type { NewIssueDefaults } from '@/utils/project';
 // through `anyOpen`. Project settings are their own pages, not an overlay.
 export function useOverlays() {
   const [showNewProject, setShowNewProject] = useState(false);
-  const [showNewTeam, setShowNewTeam] = useState(false);
+  const [showNewInitiative, setShowNewInitiative] = useState(false);
   const [showCommand, setShowCommand] = useState(false);
   // Initial field values for a new issue (null = the new-issue modal is closed).
   const [newIssueDefaults, setNewIssueDefaults] = useState<NewIssueDefaults | null>(null);
@@ -22,13 +22,17 @@ export function useOverlays() {
   }, [pathname]);
 
   const anyOpen =
-    showNewProject || showNewTeam || showCommand || newIssueDefaults != null || openIssueId != null;
+    showNewProject ||
+    showNewInitiative ||
+    showCommand ||
+    newIssueDefaults != null ||
+    openIssueId != null;
 
   return {
     showNewProject,
     setShowNewProject,
-    showNewTeam,
-    setShowNewTeam,
+    showNewInitiative,
+    setShowNewInitiative,
     showCommand,
     setShowCommand,
     newIssueDefaults,

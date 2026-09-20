@@ -2,7 +2,10 @@ import {
   db,
   chatAttachment,
   documentAsset,
+  initiative,
+  initiativeAttachment,
   issue,
+  issueActivity,
   issueAttachment,
   issueType,
   project,
@@ -14,7 +17,7 @@ import {
   team,
   teamMember,
 } from '@repo/db';
-import { and, eq, getTableColumns } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { HttpError, iso } from '#shared/lib';
 import {
   defaultMemberPermissions,
@@ -28,7 +31,7 @@ import { getLimits } from '#shared/limits';
 import { deleteThreadsWhere } from '#modules/agents/core/runtime/memory';
 import { getProjectDefaults } from '#modules/settings/service';
 import { dropUnusedTeamMembership } from '#modules/scim/reconcile';
-import { deleteObjects } from '#shared/s3';
+import { deleteObjects } from '@repo/storage';
 import { lockAttachmentStorage } from '#modules/attachments/storage';
 
 // Data access for projects: the top-level container that groups its own columns,
@@ -83,6 +86,9 @@ export interface ProjectFeatures {
 // actions like deletion; the API still enforces the permission on every request.
 export interface ProjectListItem extends ProjectRow {
   role: 'owner' | 'member';
+  lastActivityAt: string | null;
+  isFavorite: boolean;
+  isHidden: boolean;
   // The caller's resolved permission matrix in this project. Present only when the
   // list is requested with permissions (opts.withPermissions); omitted otherwise.
   permissions?: Permissions;
@@ -128,43 +134,91 @@ export async function mapProject(row: ProjectWithTeam): Promise<ProjectRow> {
   };
 }
 
-// Only the projects the user is a member of, ordered by key. Each carries the
-// caller's role in that project (owner | member). When mcpOnly is set, projects out
-// of their team's MCP reach are excluded, so an MCP caller only sees projects it can
-// work with.
 export async function listProjects(
   userId: string,
-  opts: { mcpOnly?: boolean; withPermissions?: boolean } = {},
+  opts: {
+    mcpOnly?: boolean;
+    withPermissions?: boolean;
+    q?: string;
+    sort?: 'key' | 'name' | 'created' | 'activity';
+    teamId?: number;
+  } = {},
 ): Promise<ProjectListItem[]> {
-  const where = opts.mcpOnly
-    ? and(eq(projectMember.userId, userId), eq(project.mcpEnabled, true), eq(team.mcpEnabled, true))
-    : eq(projectMember.userId, userId);
+  const term = opts.q?.trim().replace(/[\\%_]/g, '\\$&');
+  const where = and(
+    eq(projectMember.userId, userId),
+    opts.mcpOnly ? and(eq(project.mcpEnabled, true), eq(team.mcpEnabled, true)) : undefined,
+    opts.teamId !== undefined ? eq(project.teamId, opts.teamId) : undefined,
+    term
+      ? or(
+          ilike(project.key, `%${term}%`),
+          ilike(project.name, `%${term}%`),
+          ilike(project.description, `%${term}%`),
+        )
+      : undefined,
+  );
+  const latestActivity = db
+    .selectDistinctOn([issue.projectId], {
+      projectId: issue.projectId,
+      createdAt: issueActivity.createdAt,
+    })
+    .from(issueActivity)
+    .innerJoin(issue, eq(issue.id, issueActivity.issueId))
+    .innerJoin(project, eq(project.id, issue.projectId))
+    .innerJoin(team, eq(team.id, project.teamId))
+    .innerJoin(projectMember, eq(projectMember.projectId, project.id))
+    .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
+    .where(
+      and(
+        where,
+        or(
+          eq(projectMember.role, 'owner'),
+          isNull(teamRole.permissions),
+          sql`${teamRole.permissions} -> 'work_items' -> 'read' = 'true'::jsonb`,
+        ),
+      ),
+    )
+    .orderBy(issue.projectId, desc(issueActivity.createdAt))
+    .as('latest_activity');
+  const order: SQL[] = [];
+  if (opts.sort === 'activity') order.push(sql`${latestActivity.createdAt} desc nulls last`);
+  else if (opts.sort === 'created') order.push(desc(project.createdAt));
+  else if (opts.sort === 'name') order.push(sql`lower(${project.name})`);
   const rows = await db
     .select({
       ...projectWithTeam,
       memberRole: projectMember.role,
       rolePermissions: teamRole.permissions,
+      lastActivityAt: latestActivity.createdAt,
+      isFavorite: projectMember.isFavorite,
+      isHidden: projectMember.isHidden,
     })
     .from(project)
     .innerJoin(team, eq(team.id, project.teamId))
     .innerJoin(projectMember, eq(projectMember.projectId, project.id))
     .leftJoin(teamRole, eq(teamRole.id, projectMember.roleId))
+    .leftJoin(latestActivity, eq(latestActivity.projectId, project.id))
     .where(where)
-    .orderBy(project.key);
+    .orderBy(...order, project.key, project.id);
   return Promise.all(
-    rows.map(async ({ memberRole, rolePermissions, ...row }) => {
-      const role = memberRole === 'owner' ? 'owner' : 'member';
-      const item: ProjectListItem = { ...(await mapProject(row)), role };
-      if (opts.withPermissions) {
-        item.permissions =
-          role === 'owner'
-            ? fullPermissions()
-            : rolePermissions
-              ? normalizePermissions(rolePermissions)
-              : defaultMemberPermissions();
-      }
-      return item;
-    }),
+    rows.map(
+      async ({ memberRole, rolePermissions, lastActivityAt, isFavorite, isHidden, ...row }) => {
+        const role = memberRole === 'owner' ? 'owner' : 'member';
+        const item: ProjectListItem = {
+          ...(await mapProject(row)),
+          role,
+          lastActivityAt: lastActivityAt ? iso(lastActivityAt) : null,
+          isFavorite,
+          isHidden,
+        };
+        if (opts.withPermissions) {
+          if (role === 'owner') item.permissions = fullPermissions();
+          else if (rolePermissions) item.permissions = normalizePermissions(rolePermissions);
+          else item.permissions = defaultMemberPermissions();
+        }
+        return item;
+      },
+    ),
   );
 }
 
@@ -453,12 +507,12 @@ export async function setEstimateSettings(
 
 // Auto-archive thresholds for a project. Stored in project_setting under
 // AUTO_ARCHIVE_KEY as { completedDays, canceledDays }. Each value is the number of
-// days an issue may sit inactive in a completed/canceled column before the worker
+// days an issue may sit inactive in a completed/canceled column before the sweep
 // archives it; null disables archiving for that state group. A new project is
 // created with DEFAULT_AUTO_ARCHIVE; a project with no stored row (created before
 // this) keeps both null, so nothing is archived until an owner turns it on. The
-// worker reads the same key and jsonb fields directly (apps/worker/src/store.ts) —
-// keep them in sync.
+// sweep reads the same key and jsonb fields directly (modules/issues/auto-archive.ts)
+// — keep them in sync.
 const AUTO_ARCHIVE_KEY = 'auto_archive';
 
 const DEFAULT_AUTO_ARCHIVE = { completedDays: 28, canceledDays: 7 };
@@ -570,8 +624,15 @@ export async function deleteProject(projectId: number): Promise<void> {
       .from(documentAsset)
       .innerJoin(projectDocument, eq(projectDocument.id, documentAsset.documentId))
       .where(eq(projectDocument.projectId, projectId));
+    const initiativeAssets = await tx
+      .select({ s3Key: initiativeAttachment.s3Key })
+      .from(initiativeAttachment)
+      .innerJoin(initiative, eq(initiative.id, initiativeAttachment.initiativeId))
+      .where(eq(initiative.projectId, projectId));
     await tx.delete(project).where(eq(project.id, projectId));
-    return [...issueAssets, ...chatAssets, ...documentAssets].map((asset) => asset.s3Key);
+    return [...issueAssets, ...chatAssets, ...documentAssets, ...initiativeAssets].map(
+      (asset) => asset.s3Key,
+    );
   });
   await deleteObjects(assetKeys);
   for (const { teamId, userId } of provisioned) {
