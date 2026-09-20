@@ -20,10 +20,11 @@ function apiOrigin(): string {
 // annotator reads a file picked in the new issue modal through its blob: URL. React
 // evals in development only, to rebuild server error stacks in the browser.
 export function contentSecurityPolicy(): string {
+  const turnstileOrigin = 'https://challenges.cloudflare.com';
   const scriptSources =
     process.env.NODE_ENV === 'development'
-      ? "'self' 'unsafe-inline' 'unsafe-eval'"
-      : "'self' 'unsafe-inline'";
+      ? `'self' 'unsafe-inline' 'unsafe-eval' ${turnstileOrigin}`
+      : `'self' 'unsafe-inline' ${turnstileOrigin}`;
   return [
     "default-src 'self'",
     `script-src ${scriptSources}`,
@@ -32,6 +33,7 @@ export function contentSecurityPolicy(): string {
     "media-src 'self' data: blob: https: http:",
     "font-src 'self' data:",
     `connect-src 'self' blob: ${apiOrigin()}`.trimEnd(),
+    `frame-src ${turnstileOrigin}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

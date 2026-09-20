@@ -23,4 +23,10 @@ describe('contentSecurityPolicy', () => {
     process.env.API_URL = 'not a url';
     assert.match(contentSecurityPolicy(), /connect-src 'self' blob:;/);
   });
+
+  it('allows the Cloudflare Turnstile script and frame', () => {
+    const policy = contentSecurityPolicy();
+    assert.match(policy, /script-src [^;]*https:\/\/challenges\.cloudflare\.com;/);
+    assert.match(policy, /frame-src https:\/\/challenges\.cloudflare\.com;/);
+  });
 });
