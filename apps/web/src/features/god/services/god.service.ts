@@ -12,6 +12,7 @@ import type { ProjectDefaults } from '@/lib/api/endpoints/projects';
 import { nextPageParam, type PageParams } from '@/lib/api/core/paging';
 import { DEFAULT_PAGE_SIZE } from '@/hooks/usePaging';
 import {
+  type AgentSettings,
   type InstanceAuthSettingsPatch,
   type InstanceEmailSettingsPatch,
   type InstanceGoogleSettingsPatch,
@@ -31,13 +32,15 @@ import {
   updateInstanceTelegramSettings,
   getInstanceProjectDefaults,
   updateInstanceProjectDefaults,
+  getInstanceAgentSettings,
+  updateInstanceAgentSettings,
   getInstanceStorageSettings,
   updateInstanceStorageSettings,
   listInstanceUsers,
+  setInstanceUserActive,
   getInstanceUser,
   deleteInstanceUser,
   listInstanceProjects,
-  listInstanceProjectOptions,
   getInstanceProject,
   listInstanceTeams,
   getInstanceTeam,
@@ -45,13 +48,6 @@ import {
   listInstanceTeamMembers,
   verifyInstanceUserEmail,
 } from '@/lib/api/endpoints/god';
-import {
-  getInstanceScimSettings,
-  updateInstanceScimSettings,
-  createInstanceScimToken,
-  listInstanceScimGroups,
-  setInstanceScimGroupMappings,
-} from '@/lib/api/endpoints/scim';
 import { qk } from '@/services/queryKeys';
 
 // Data hooks for god mode. Every write returns the new state, which replaces the
@@ -142,51 +138,6 @@ export function useUpdateInstanceOidcSettings() {
   });
 }
 
-// SCIM provisioning: the token an identity provider authenticates with, and what the
-// groups it pushes grant.
-export function useInstanceScimSettingsQuery() {
-  return useQuery({
-    queryKey: qk.instanceScimSettings,
-    queryFn: () => getInstanceScimSettings(),
-  });
-}
-
-export function useUpdateInstanceScimSettings() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (patch: { enabled: boolean }) => updateInstanceScimSettings(patch),
-    onSuccess: (data) => qc.setQueryData(qk.instanceScimSettings, data),
-  });
-}
-
-export function useCreateInstanceScimToken() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => createInstanceScimToken(),
-    // The response is the token itself, not the settings, so the redacted view has
-    // to be refetched for its new prefix.
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.instanceScimSettings }),
-  });
-}
-
-export function useInstanceScimGroupsQuery() {
-  return useQuery({
-    queryKey: qk.instanceScimGroups,
-    queryFn: () => listInstanceScimGroups(),
-  });
-}
-
-export function useSetInstanceScimGroupMappings() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input: {
-      groupId: string;
-      mappings: { projectId: number; role: 'owner' | 'member'; roleId: number | null }[];
-    }) => setInstanceScimGroupMappings(input.groupId, input.mappings),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.instanceScimGroups }),
-  });
-}
-
 // The instance Telegram bot: the bot users link their accounts through, and the
 // default sender for Telegram notifications.
 export function useInstanceTelegramSettingsQuery() {
@@ -218,6 +169,22 @@ export function useUpdateInstanceProjectDefaults() {
   return useMutation({
     mutationFn: (body: ProjectDefaults) => updateInstanceProjectDefaults(body),
     onSuccess: (data) => qc.setQueryData(qk.instanceProjectDefaults, data),
+  });
+}
+
+// What applies to every team's agents: how long their run traces are kept.
+export function useInstanceAgentSettingsQuery() {
+  return useQuery({
+    queryKey: qk.instanceAgentSettings,
+    queryFn: () => getInstanceAgentSettings(),
+  });
+}
+
+export function useUpdateInstanceAgentSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AgentSettings) => updateInstanceAgentSettings(body),
+    onSuccess: (data) => qc.setQueryData(qk.instanceAgentSettings, data),
   });
 }
 
@@ -296,22 +263,24 @@ export function useInstanceProjectsQuery(filters: InstanceProjectFilters) {
   });
 }
 
-// Every project on the instance, for the SCIM mapping picker. Changes rarely, so it
-// is cached for the session.
-export function useInstanceProjectOptionsQuery() {
-  return useQuery({
-    queryKey: qk.instanceProjectOptions,
-    queryFn: () => listInstanceProjectOptions(),
-    staleTime: Infinity,
-  });
-}
-
 // One project with its members. Mounted only while a project is selected, like the
 // account panel.
 export function useInstanceProjectQuery(projectId: number) {
   return useQuery({
     queryKey: qk.instanceProject(projectId),
     queryFn: () => getInstanceProject(projectId),
+  });
+}
+
+export function useSetInstanceUserActive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, active }: { userId: string; active: boolean }) =>
+      setInstanceUserActive(userId, active),
+    onSuccess: (data) => {
+      qc.setQueryData(qk.instanceUser(data.id), data);
+      void qc.invalidateQueries({ queryKey: qk.anyInstanceUsers });
+    },
   });
 }
 

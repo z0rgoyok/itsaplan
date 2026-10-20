@@ -22,6 +22,11 @@ export interface InstanceAuthSettings {
   magicLink: boolean;
   emailPassword: boolean;
   trustProviderEmails: boolean;
+  personalWorkspaces: boolean;
+  // Days an invite link stays valid; 0 means invites never expire.
+  inviteTtlDays: number;
+  // The domains a new account's address must be at; empty admits any address.
+  allowedEmailDomains: string[];
   hasEmailProvider: boolean;
   // Whether Google or the OIDC provider can run. Password sign-in may only be turned
   // off while one of them can.
@@ -34,7 +39,14 @@ export interface InstanceAuthSettingsPatch {
   magicLink?: boolean;
   emailPassword?: boolean;
   trustProviderEmails?: boolean;
+  personalWorkspaces?: boolean;
+  inviteTtlDays?: number;
+  allowedEmailDomains?: string[];
 }
+
+// 'microsoft365' signs in to smtp.office365.com as an app registration (OAuth) instead
+// of with the mailbox password, which Microsoft refuses once the mailbox has MFA.
+export type SmtpAuth = 'password' | 'microsoft365';
 
 // The instance mail provider used for authentication email (password reset, address
 // verification, magic links). Separate from a team's notification provider.
@@ -48,6 +60,8 @@ export interface InstanceEmailSettings {
     username: string;
     hasPassword: boolean;
     timeout: number | null;
+    auth: SmtpAuth;
+    oauth: { tenantId: string; clientId: string; hasClientSecret: boolean };
   };
   resend: { enabled: boolean; hasApiKey: boolean };
   from: string;
@@ -64,6 +78,8 @@ export interface InstanceEmailSettingsPatch {
     username: string;
     password?: string;
     timeout: number | null;
+    auth?: SmtpAuth;
+    oauth?: { tenantId: string; clientId: string; clientSecret?: string };
   };
   resend?: { enabled: boolean; apiKey?: string };
   from?: string;
@@ -140,6 +156,9 @@ export interface InstanceUser {
   isAgent: boolean;
   providers: string[];
   projectCount: number;
+  active: boolean;
+  // Why god cannot switch `active`, or null when it can.
+  activeLock: 'owner' | 'agent' | 'scim' | null;
   lastSeenAt: string | null;
   createdAt: string;
 }
@@ -155,8 +174,11 @@ export interface InstanceUserProject {
   roleName: string | null;
   permissions: Permissions;
   // How many owners the project has. 1 on a project this user owns means deleting
-  // the account would leave the project with nobody who can manage it.
+  // the account would leave the project with nobody who can manage it, unless it is in a
+  // workspace of theirs.
   ownerCount: number;
+  // In a workspace this user owns: it passes to the instance owner with the account.
+  inOwnWorkspace: boolean;
   joinedAt: string;
 }
 
@@ -209,16 +231,6 @@ export interface InstanceProjectMember {
 
 export interface InstanceProjectDetail extends InstanceProject {
   members: InstanceProjectMember[];
-  // The custom roles a member of this project can be put on, for the SCIM group
-  // mapping form.
-  roles: { id: number; name: string; isDefault: boolean }[];
-}
-
-// One instance project as a picker entry: what the SCIM mapping form needs to name it.
-export interface InstanceProjectOption {
-  id: number;
-  key: string;
-  name: string;
 }
 
 // Instance administration (god mode). Every route below is owner-only; a plain
@@ -270,6 +282,20 @@ export const updateInstanceProjectDefaults = (body: ProjectDefaults) =>
     body: JSON.stringify(body),
   });
 
+// What applies to every team's agents on this instance.
+export interface AgentSettings {
+  // Days a run trace is kept for. 0 keeps traces until they are deleted by hand.
+  traceRetentionDays: number;
+}
+
+export const getInstanceAgentSettings = () => request<AgentSettings>('/god/agent-settings');
+
+export const updateInstanceAgentSettings = (body: AgentSettings) =>
+  request<AgentSettings>('/god/agent-settings', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+
 export const getInstanceStorageSettings = () => request<StorageSettings>('/god/storage-settings');
 
 export const updateInstanceStorageSettings = (patch: StorageSettingsPatch) =>
@@ -307,6 +333,11 @@ export const listInstanceUsers = (
 export const getInstanceUser = (userId: string) =>
   request<InstanceUserDetail>(`/god/users/${userId}`);
 
+export const setInstanceUserActive = (userId: string, active: boolean) =>
+  request<InstanceUserDetail>(`/god/users/${userId}/${active ? 'reactivate' : 'deactivate'}`, {
+    method: 'POST',
+  });
+
 export const verifyInstanceUserEmail = (userId: string) =>
   request<InstanceUserDetail>(`/god/users/${userId}/verify-email`, { method: 'POST' });
 
@@ -321,10 +352,6 @@ export const deleteInstanceUser = (userId: string, withProjects: boolean) =>
 // members. Search and paging run on the server.
 export const listInstanceProjects = (params: PageParams & { search?: string }) =>
   request<Page<InstanceProject>>(`/god/projects${pageQuery(params, { search: params.search })}`);
-
-// Every project, for the SCIM mapping picker; the directory above is paged.
-export const listInstanceProjectOptions = () =>
-  request<InstanceProjectOption[]>('/god/projects/options');
 
 export const getInstanceProject = (projectId: number) =>
   request<InstanceProjectDetail>(`/god/projects/${projectId}`);

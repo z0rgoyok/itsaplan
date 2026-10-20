@@ -16,10 +16,11 @@ export async function resetDb(): Promise<void> {
 
   // All application and better-auth tables live in the public schema. The
   // drizzle migrations bookkeeping table is excluded so migrations are not
-  // re-run. RESTART IDENTITY resets serial ids; CASCADE handles FK order.
+  // re-run, and so is the MCP resource better-auth writes once, at startup.
+  // RESTART IDENTITY resets serial ids; CASCADE handles FK order.
   const rows = (await db.execute(sql`
     SELECT tablename FROM pg_tables
-    WHERE schemaname = 'public' AND tablename <> '__drizzle_migrations'
+    WHERE schemaname = 'public' AND tablename NOT IN ('__drizzle_migrations', 'oauth_resource')
   `)) as unknown as Array<{ tablename: string }>;
 
   const tables = rows.map((r) => `"${r.tablename}"`).join(', ');

@@ -19,6 +19,7 @@ import {
   readDocumentRecovery,
   type DocumentSessionState,
 } from '../utils/documentRecovery';
+import { markdownJson } from '../utils/documentImport';
 
 export type DocumentSyncState =
   'connecting' | 'saved' | 'saving' | 'offline' | 'error' | 'conflict';
@@ -181,11 +182,14 @@ export function useDocumentCollaboration({
     const start = async () => {
       setStatus('connecting');
       try {
+        // The seed must come from the same version as the one sent: the editor can
+        // still show an older body after another writer replaced the Markdown.
+        const current = latest.current.document;
         const session = await openDocumentSession(
           projectKey,
           document.id,
-          latest.current.document.version,
-          editor.getJSON(),
+          current.version,
+          current.contentJson ?? markdownJson(editor, current.content),
         );
         if (cancelled || editor.isDestroyed) return;
         const recovery = readDocumentRecovery(storageKey);
@@ -296,6 +300,7 @@ export function useDocumentCollaboration({
     status,
     version: confirmedVersion.current,
     ready,
+    openFailed: !ready && (status === 'error' || status === 'offline'),
     flush,
     recoveryConflict,
     discardRecovery,

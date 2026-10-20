@@ -4,6 +4,8 @@
 **/.turbo
 .git
 .gitignore
+.automate
+.ops-project
 **/.env
 **/.env.local
 **/*.log

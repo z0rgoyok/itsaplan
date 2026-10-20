@@ -7,10 +7,13 @@ import {
   ru,
   zhCN,
   ar,
+  faIR,
   fr,
   ptBR,
   id,
   es,
+  ko,
+  tr,
   type Locale as DateFnsLocale,
 } from 'date-fns/locale';
 
@@ -23,10 +26,13 @@ const LOCALES: Record<string, DateFnsLocale> = {
   ru,
   'zh-CN': zhCN,
   ar,
+  fa: faIR,
   fr,
   'pt-BR': ptBR,
   id,
   'es-ES': es,
+  ko,
+  tr,
 };
 
 export function useDateFnsLocale(): DateFnsLocale {

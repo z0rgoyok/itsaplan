@@ -33,6 +33,11 @@ checklists and their items.
 search_issues and list_issues are for finding issues by text or by field, not for
 resolving an identifier.
 
+## You
+
+Your key acts as one user. When a request says "me", "my" or "mine", call
+get_current_user for that user's id rather than matching a name or an email.
+
 ## Teams
 
 A team owns the projects, the AI agents, the skills and the configured tools. It is
@@ -61,8 +66,8 @@ When asked to actually work on an issue, keep its state honest as you go:
    "canceled". Do not leave an issue in "started" once you have stopped.
 5. Add a comment only when part of the issue was not done: say what is left and why,
    in one or two plain sentences. When everything asked for is done, add no comment.
-6. Then propose a commit message in the chat, for the person to use or edit. Do not
-   commit anything yourself, and do not put the message in a comment on the issue.
+6. Follow the repository's Git workflow and the person's explicit instructions for
+   committing and publishing. Keep proposed commit messages in the chat.
 
 The proposed message is one line, in English, in the form "KEY-42 short summary of
 the change" — the issue's identifier, then what the change does, at the level of the

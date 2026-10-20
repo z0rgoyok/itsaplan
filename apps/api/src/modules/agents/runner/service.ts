@@ -1,8 +1,17 @@
 import { db, aiAgent, agentRun, project, projectMember } from '@repo/db';
 import { and, eq, sql } from 'drizzle-orm';
+import { HttpError } from '#shared/lib';
 import { type ContextUsage } from '../chat-usage';
-import { agentRunConfig, loadThreadContext } from '../core/run-queue';
-import { recordAgentRunFinished, recordAgentRunStarted } from '../core/run-activity';
+import {
+  agentRunConfig,
+  deferRun,
+  issueRunTurn,
+  loadThreadContext,
+  runRetryDelayMs,
+  scheduleRunRetry,
+} from '../core/run-queue';
+import { agentRunStarted, recordAgentRunFinished } from '../core/run-activity';
+import { runAdmissionDelay } from '../core/run-admission';
 import type { AgentKind } from '../core/service';
 import type { AgentRunTrigger } from '../model';
 import {
@@ -41,6 +50,8 @@ export interface RunnerAgent {
   // A chat names all of them in the system prompt; a run names the one it works in.
   projects: RunnerProject[];
   instructions: string | null;
+  // Set when the agent is sent its work rather than drained by a runner.
+  invocationUrl: string | null;
 }
 
 // The agent whose bot user is the caller, or null when the caller is not an agent.
@@ -55,6 +66,7 @@ export async function getRunnerAgent(userId: string): Promise<RunnerAgent | null
       userId: aiAgent.userId,
       username: aiAgent.username,
       instructions: aiAgent.instructions,
+      invocationUrl: aiAgent.invocationUrl,
     })
     .from(aiAgent)
     .where(eq(aiAgent.userId, userId))
@@ -90,6 +102,7 @@ export interface RunnerRun {
 // the prompts and are not handed to the runner.
 type ClaimedRow = Omit<RunnerRun, 'systemPrompt'> & {
   // The project the run works in, which is what its system prompt names.
+  projectId: number;
   projectKey: string;
   projectName: string;
   projectDescription: string;
@@ -99,6 +112,7 @@ type ClaimedRow = Omit<RunnerRun, 'systemPrompt'> & {
   requesterName: string | null;
   requesterUsername: string | null;
   sourceActivityId: number | null;
+  scheduleId: number | null;
 };
 
 // Records that a runner polled, which is what the UI shows as the agent's presence.
@@ -128,12 +142,26 @@ async function expireExhaustedRuns(agent: RunnerAgent): Promise<void> {
     await recordAgentRunFinished({ ...row, agentUserId: agent.userId }, 'failed');
 }
 
-// Claims the agent's next due run, or null when it has none. FOR UPDATE SKIP LOCKED
-// keeps two runners on the same key from taking the same run.
+// An agent with an invocation URL is sent its work, so a runner that claims as well
+// would take tasks the endpoint is meant to get. The endpoint reports through the runner
+// routes too; only the claims are refused.
+export function assertRunnerDrained(agent: RunnerAgent): void {
+  if (agent.invocationUrl) {
+    throw new HttpError(409, 'This agent receives its work at its invocation URL');
+  }
+}
+
 export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | null> {
+  assertRunnerDrained(agent);
+  await touchRunner(agent.id);
+  return takeNextRun(agent);
+}
+
+// Claims the agent's next due run, or null when it has none. FOR UPDATE SKIP LOCKED
+// keeps two claims on the same agent from taking the same run.
+export async function takeNextRun(agent: RunnerAgent): Promise<RunnerRun | null> {
   const agentId = agent.id;
   await expireExhaustedRuns(agent);
-  await touchRunner(agentId);
   const rows = await db.execute(sql`
     UPDATE agent_run r
     SET attempts = r.attempts + 1,
@@ -142,6 +170,7 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
     WHERE r.id = (
       SELECT id FROM agent_run q
       WHERE q.agent_id = ${agentId} AND q.status = 'pending' AND q.next_attempt_at <= now()
+        AND ${issueRunTurn}
       ORDER BY q.next_attempt_at, q.id
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -152,6 +181,8 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
       r.prompt,
       r.attempts,
       r.issue_id AS "issueId",
+      r.schedule_id AS "scheduleId",
+      r.project_id AS "projectId",
       (SELECT p.key FROM project p WHERE p.id = r.project_id) AS "projectKey",
       (SELECT p.name FROM project p WHERE p.id = r.project_id) AS "projectName",
       (SELECT p.description FROM project p WHERE p.id = r.project_id) AS "projectDescription",
@@ -174,6 +205,11 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
   `);
   const row = (rows as unknown as ClaimedRow[])[0];
   if (!row) return null;
+  const wait = await runAdmissionDelay({ ...row, agentId });
+  if (wait > 0) {
+    await deferRun(row.id, wait);
+    return null;
+  }
   const threadContext = await loadThreadContext(row.sourceActivityId);
   const forPrompt = {
     ...row,
@@ -181,7 +217,15 @@ export async function claimRunnerRun(agent: RunnerAgent): Promise<RunnerRun | nu
     agentUsername: agent.username,
     threadContext,
   };
-  await recordAgentRunStarted(forPrompt);
+  // A start that fails is a failed attempt: the run comes back after the retry delay,
+  // with the error on it, rather than being handed out half started.
+  try {
+    await agentRunStarted(forPrompt);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await scheduleRunRetry(row.id, runRetryDelayMs(row.attempts), message);
+    return null;
+  }
   return {
     id: row.id,
     trigger: row.trigger,
