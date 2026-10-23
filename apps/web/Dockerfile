@@ -40,7 +40,7 @@ RUN cd apps/web && bun run build
 # module hook, and Bun does not honour it — every page rendering markdown then fails
 # with "Failed to load external module isomorphic-dompurify-<hash>". Alpine keeps the
 # musl build of the traced native modules (sharp) valid.
-FROM node:24-alpine AS release
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 AS release
 # The server runs on node alone. npm, npx, corepack and yarn ship with the base image,
 # are never used, and bring their own vulnerable dependencies (npm's undici and tar).
 RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-* \
