@@ -113,21 +113,22 @@ export default function AuthRegisterForm() {
         <AuthFormHeader title={t('register.title')} description={subtitle()} />
 
         {passwordEnabled && (
+          <AuthRegisterPasswordFields
+            email={email}
+            password={password}
+            confirm={confirm}
+            pending={pending}
+            onEmailChange={setEmail}
+            onPasswordChange={setPassword}
+            onConfirmChange={setConfirm}
+          />
+        )}
+
+        {error && <FieldError>{error}</FieldError>}
+
+        {passwordEnabled && (
           <>
-            <AuthRegisterPasswordFields
-              email={email}
-              password={password}
-              confirm={confirm}
-              pending={pending}
-              onEmailChange={setEmail}
-              onPasswordChange={setPassword}
-              onConfirmChange={setConfirm}
-            />
-
-            {error && <FieldError>{error}</FieldError>}
-
             <AuthTurnstile ref={captchaRef} onTokenChange={setCaptchaToken} />
-
             <Field>
               <Button type="submit" disabled={pending || (authCaptchaEnabled && !captchaToken)}>
                 {pending ? t('register.submitPending') : t('register.submit')}

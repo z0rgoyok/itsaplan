@@ -12,6 +12,8 @@ function sign(secret: string, body: string, t = Math.floor(Date.now() / 1000)): 
 
 const run = (id: number): Run => ({
   id,
+  attempts: 1,
+  traceEvents: true,
   trigger: 'mention',
   prompt: 'p',
   systemPrompt: 's',

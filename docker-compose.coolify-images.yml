@@ -84,6 +84,18 @@ services:
       echo 'bucket ready: '\"$$S3_BUCKET\"
       "
 
+  # One-shot: prepares the backups volume for the non-root API. A volume created by
+  # the former root container keeps its owner when mounted, so this must run first.
+  backups-init:
+    image: ghcr.io/croffasia/itsaplan-api:${VERSION:-latest}
+    restart: 'no'
+    exclude_from_hc: true
+    user: '0:0'
+    entrypoint: ['sh', '-c']
+    command: ['chown -R 10001:10001 /backups && chmod 700 /backups']
+    volumes:
+      - db-backups:/backups
+
   # One-shot: dumps the database and applies the migrations, then exits. api, worker
   # and bot start only after it succeeds, so none of them runs against an old schema.
   # restart 'no' keeps a finished run from being started again.
@@ -95,6 +107,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      backups-init:
+        condition: service_completed_successfully
     environment:
       - DATABASE_URL=postgres://${POSTGRES_USER:-itsaplan}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-itsaplan}
       # How long the dumps are kept, and the switch that upgrades without one.

@@ -332,6 +332,12 @@ async function refreshOidcProvider(): Promise<boolean> {
           // The `account` rows hold the OIDC subject. genericOAuth reads `id` instead
           // when the discovery document lists no id_token signing algorithms.
           accountSubject: ({ profile }) => String(profile.sub ?? ''),
+          // Only the standard email_verified claim, true or "true", says the address is
+          // verified.
+          mapProfileToUser: (profile) => {
+            const claim: unknown = profile.email_verified;
+            return { emailVerified: claim === true || claim === 'true' };
+          },
           // Signing out of the app leaves the session at the identity provider alone.
           disableProviderLogout: true,
         },
@@ -599,6 +605,7 @@ function createAuth() {
       // the old one ends with it. The signed-in change-password form sends
       // revokeOtherSessions for the same reason.
       revokeSessionsOnPasswordReset: true,
+      password: extensions.password,
       sendResetPassword: async ({ user, url }) => {
         await sendAuthEmail({
           to: user.email,
@@ -673,6 +680,14 @@ function createAuth() {
           defaultValue: true,
           input: false,
         },
+        // When the person last used the app by any means (the web, an API key, MCP),
+        // to the hour; written by the api's auth context, read by god's user list.
+        lastSeenAt: {
+          type: 'date',
+          required: false,
+          input: false,
+          returned: false,
+        },
       },
     },
 
@@ -680,6 +695,18 @@ function createAuth() {
     // per request, so god mode can change them without a restart.
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        // A key resolves to its owner's session on every endpoint here, and what such a
+        // session sets up outlives the key: a passkey enrolled with it still signs in
+        // after the key is deleted and the password reset, and a new key starts a fresh
+        // lifetime. A key is for the planner API; the account is managed from a signed-in
+        // session. A server-side call, such as the one issuing an agent's key, carries
+        // no request and passes.
+        if (ctx.request?.headers.get('x-api-key')) {
+          throw new APIError('FORBIDDEN', {
+            message: 'An API key cannot manage the account. Sign in to do this.',
+          });
+        }
+
         // Read here so the two sign-in endpoints, which also go through the
         // verification gate below, make one query instead of two.
         const passwordSettings = PASSWORD_PATHS.has(ctx.path) ? await getAuthSettings() : null;
@@ -750,7 +777,10 @@ function createAuth() {
               ? eq(schema.user.email, (body?.email ?? '').trim().toLowerCase())
               : eq(schema.user.username, (body?.username ?? '').trim().toLowerCase());
           if (await isUnverified(identifier)) {
+            // The code is better-auth's own for this refusal; the sign-in form tells it
+            // apart from the other 403s, such as a deactivated account, by it.
             throw new APIError('FORBIDDEN', {
+              code: 'EMAIL_NOT_VERIFIED',
               message: 'Confirm your email address before signing in',
             });
           }
@@ -769,19 +799,7 @@ function createAuth() {
           return;
         }
 
-        // A key resolves to its owner's session, so a request carrying a leaked key
-        // reaches the key endpoints. It may not issue another one: a new key starts a
-        // fresh lifetime, which is the expiry of the leaked key renewed under a
-        // different row. Issuing a key is left to a signed-in session. The server-side
-        // call that issues an agent's key carries no request and is unaffected.
-        if (ctx.path === '/api-key/create' && ctx.request?.headers.get('x-api-key')) {
-          throw new APIError('FORBIDDEN', {
-            message: 'An API key cannot create another API key. Sign in to create one.',
-          });
-        }
-
-        // The lifetime is fixed at creation for the same reason; a longer one is a new
-        // key, created from a session.
+        // The lifetime of a key is fixed at creation; a longer one is a new key.
         if (ctx.path === '/api-key/update') {
           const body = ctx.body as { expiresIn?: number | null } | undefined;
           if (body && body.expiresIn !== undefined) {

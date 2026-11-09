@@ -53,7 +53,7 @@ beforeEach(async () => {
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   });
   Object.defineProperty(window, '__ITSAPLAN_ENV__', {
-    value: { apiUrl: 'https://api.test', privacyUrl: '', termsUrl: '' },
+    value: { apiUrl: 'https://api.test', privacyUrl: '', termsUrl: '', turnstileSiteKey: '' },
   });
   saved = [];
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

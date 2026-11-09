@@ -1,4 +1,5 @@
 import { t } from 'elysia';
+import { pageQueryFields, pageResponse } from '#shared/pagination';
 
 const projectRole = t.Union([t.Literal('owner'), t.Literal('member')]);
 
@@ -25,10 +26,27 @@ export const createTeamInviteBody = t.Object({
   role: teamRole,
 });
 
-// The manager-facing invite row (InviteRow from the service).
+export const inviteCandidatesQuery = t.Object({
+  search: t.String({
+    minLength: 2,
+    maxLength: 200,
+    description: 'Part of the name or the address, at least 2 characters.',
+  }),
+});
+
+export const InviteCandidateListResponse = t.Array(
+  t.Object({
+    userId: t.String(),
+    name: t.String(),
+    email: t.String(),
+    image: t.Nullable(t.String()),
+  }),
+);
+
+// The manager-facing invite row (ListedInvite from the service).
 export const InviteRowResponse = t.Object({
   id: t.Number(),
-  token: t.String(),
+  token: t.Nullable(t.String()),
   email: t.String(),
   teamRole,
   projectKey: t.Nullable(t.String()),
@@ -47,8 +65,8 @@ export const InviteRowResponse = t.Object({
 // emailFailed: a mail provider is set but the invite's email could not go out; the link
 // still works. Without a provider both are false.
 export const InviteCreateResponse = t.Composite([
-  InviteRowResponse,
-  t.Object({ emailQueued: t.Boolean(), emailFailed: t.Boolean() }),
+  t.Omit(InviteRowResponse, ['token']),
+  t.Object({ token: t.String(), emailQueued: t.Boolean(), emailFailed: t.Boolean() }),
 ]);
 
 export const InviteEmailResponse = t.Object({ emailQueued: t.Boolean() });
@@ -80,3 +98,12 @@ export const AcceptInviteResponse = t.Object({
   projectName: t.Nullable(t.String()),
   role: t.Nullable(projectRole),
 });
+
+export const receivedInvitesQuery = t.Object(pageQueryFields);
+export const ReceivedInvitePageResponse = pageResponse(
+  t.Object({
+    token: t.String(),
+    teamName: t.String(),
+    projectName: t.Nullable(t.String()),
+  }),
+);

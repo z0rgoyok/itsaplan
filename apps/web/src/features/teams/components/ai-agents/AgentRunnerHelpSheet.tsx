@@ -145,6 +145,12 @@ const AGENTS = [
     agent: 'omp',
     files: [{ name: '.mcp.json', code: MCP_JSON }],
   },
+  {
+    id: 'mastracode',
+    label: 'Mastra Code',
+    agent: 'mastracode',
+    files: [{ name: '.mcp.json', code: MCP_JSON }],
+  },
   // A command of its own turns the preset off: the runner then knows nothing about
   // what it runs, keeps no session for it, and hands it the task on stdin.
   {
@@ -183,7 +189,7 @@ function configFile(preset: {
 }
 
 export const RUN_COMMAND =
-  'npx -y --package=https://github.com/z0rgoyok/itsaplan/releases/download/runner-v0.5.2-neiro.1/itsaplan-runner.tgz itsaplan-runner';
+  'npx -y --package=https://github.com/z0rgoyok/itsaplan/releases/download/runner-v0.8.0-neiro.1/itsaplan-runner.tgz itsaplan-runner';
 
 export function AgentRunnerHelpSheet() {
   const t = useTranslations('teams.agents');

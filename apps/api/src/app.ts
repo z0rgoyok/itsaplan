@@ -20,6 +20,8 @@ import { setMcpApp } from './mcp/app-ref';
 import { gitWebhookRoutes } from './modules/git/webhook';
 import { scimRoutes } from './modules/scim';
 import { currentUserRoutes } from './modules/current-user';
+import { EmbedSitesSchema } from './modules/settings/model';
+import { getEmbedSites } from './modules/settings/service';
 import { syncOidcGroupsAfterCallback } from './modules/scim/oidc-sync';
 import { normalizeOpenApiResponse } from './openapi';
 import { requestTracking } from './shared/request-tracker';
@@ -52,6 +54,31 @@ For agent clients, use the MCP endpoint at [${apiUrl}/mcp](${apiUrl}/mcp). SCIM,
 const LEGACY_OIDC_CALLBACK = `/api/auth/oauth2/callback/${OIDC_PROVIDER_ID}`;
 const OIDC_CALLBACK = `/api/auth/callback/${OIDC_PROVIDER_ID}`;
 
+// A browser attaches the session cookie to any request to this origin, including one
+// a page on another origin (a sibling subdomain, say) makes on the visitor's behalf.
+// better-auth guards its own /api/auth/* with an origin check; this extends the same
+// guard to the rest of the api. It only applies to state-changing, cookie-driven
+// requests: an api key or bearer token is not sent automatically by a browser, so it
+// is not a CSRF vector (MCP and SCIM use bearer tokens, webhooks are signed), and the
+// server-side calls the web makes carry neither Origin nor Sec-Fetch-Site.
+const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+// The api's own origin counts too: the /docs page sends its "Try it" requests from it.
+const csrfTrustedOrigins = [...trustedOrigins, new URL(apiUrl).origin];
+
+function isCrossSiteCookieRequest(request: Request): boolean {
+  if (CSRF_SAFE_METHODS.has(request.method)) return false;
+  if (new URL(request.url).pathname.startsWith('/api/auth/')) return false;
+  const cookie = request.headers.get('cookie');
+  if (!cookie || !cookie.includes('session_token')) return false;
+  if (request.headers.get('authorization') || request.headers.get('x-api-key')) return false;
+  const origin = request.headers.get('origin');
+  if (origin !== null) return !csrfTrustedOrigins.includes(origin);
+  // No Origin: trust Sec-Fetch-Site when the browser sent it, allow its absence
+  // (non-browser clients that happen to carry a cookie are not page-driven).
+  const site = request.headers.get('sec-fetch-site');
+  return site !== null && site !== 'same-origin' && site !== 'none';
+}
+
 // The assembled Elysia app, without `.listen()`. `index.ts` imports this and
 // binds the port; tests import it and pass it to Eden Treaty to drive routes in
 // memory (no network). Keep the chain unbroken so `type App` stays accurate.
@@ -66,6 +93,12 @@ export const app = new Elysia()
   )
   // Before the routes: a hook applies only to the routes registered after it.
   .use(requestTracking)
+  .onRequest(({ request, set }) => {
+    if (isCrossSiteCookieRequest(request)) {
+      set.status = 403;
+      return { error: 'Cross-site request refused', code: 'CSRF_ORIGIN_REJECTED' };
+    }
+  })
   .onAfterHandle({ as: 'global' }, ({ request, response }) =>
     normalizeOpenApiResponse(request, response),
   )
@@ -93,6 +126,10 @@ export const app = new Elysia()
         tags: [
           { name: 'Projects', description: 'Projects and the full work items view' },
           { name: 'Teams', description: 'Teams that own projects' },
+          {
+            name: 'Project Templates',
+            description: 'Saved project configurations new projects are created from',
+          },
           { name: 'Workspaces', description: 'Workspaces that own teams, and who manages them' },
           { name: 'Members', description: 'Project membership and roles' },
           { name: 'Roles', description: 'Project roles and their permissions' },
@@ -153,6 +190,7 @@ export const app = new Elysia()
           { name: 'Dashboards', description: 'Saved analytics dashboards' },
           { name: 'Documents', description: 'Shared project Docs pages' },
           { name: 'Link previews', description: 'Public web link metadata' },
+          { name: 'Mentions', description: 'Who an @username reaches where it is written' },
           { name: 'Note boards', description: 'Freeform canvases of sticky notes' },
           { name: 'Notifications', description: "The session user's inbox notifications" },
           { name: 'Sync', description: 'Change markers a client polls for live refresh' },
@@ -304,6 +342,19 @@ export const app = new Elysia()
       },
     },
   )
+  // The sites the instance owner lets show the public pages in a frame, which the web app
+  // writes into frame-ancestors on those pages. Public on purpose: the web app's proxy
+  // reads it with no session, and every public page names the same sites in its header.
+  .get('/embed-sites', () => getEmbedSites(), {
+    response: { 200: EmbedSitesSchema },
+    detail: {
+      tags: ['System'],
+      summary: 'Get the sites that may embed public pages',
+      description:
+        'Report the sites that may show the shared work items and views, and the public ' +
+        'pages, in a frame. Public.',
+    },
+  })
   // Root doubles as the liveness/health endpoint.
   .get('/', () => ({ name: "It's a Plan api", status: 'ok' }), {
     detail: {

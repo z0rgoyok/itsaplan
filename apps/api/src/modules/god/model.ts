@@ -21,6 +21,8 @@ export const projectParams = t.Object({ projectId: t.Numeric() });
 
 export const scimGroupParams = t.Object({ groupId: t.String() });
 
+export const roleParams = t.Object({ roleId: t.Numeric() });
+
 export const listUsersQuery = t.Object({
   search: t.Optional(t.String()),
   // Agent bot users are accounts too, but they are managed on a project's AI
@@ -50,6 +52,7 @@ export const AuthSettingsResponse = t.Object({
   trustProviderEmails: t.Boolean(),
   personalWorkspaces: t.Boolean(),
   inviteTtlDays: t.Integer(),
+  inviteSearch: t.Boolean(),
   allowedEmailDomains: t.Array(t.String()),
   // The settings that depend on outbound email cannot be turned on without a mail
   // provider, and the UI explains why.
@@ -70,6 +73,7 @@ export const AuthSettingsBody = t.Object({
   personalWorkspaces: t.Optional(t.Boolean()),
   // The cap keeps createdAt plus the lifetime inside the range a Date can hold.
   inviteTtlDays: t.Optional(t.Integer({ minimum: 0, maximum: 3650 })),
+  inviteSearch: t.Optional(t.Boolean()),
   allowedEmailDomains: t.Optional(EmailDomains),
 });
 

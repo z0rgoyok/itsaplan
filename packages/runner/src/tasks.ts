@@ -1,8 +1,7 @@
-import { UsageReader } from './agui';
 import { answer } from './chat';
 import type { ChatMessage, Client, Run } from './client';
 import type { RunnerConfig } from './config';
-import { execute } from './execute';
+import { runTask } from './run';
 
 // One task of either feed, from the moment the runner holds it to its reported result. A
 // task is the same whether the runner claimed it or the instance sent it.
@@ -24,20 +23,6 @@ async function withHeartbeat<T>(log: Log, beat: () => Promise<void>, work: Promi
   }
 }
 
-function taskOf(run: Run) {
-  return {
-    prompt: run.prompt,
-    systemPrompt: run.systemPrompt,
-    env: {
-      ITSAPLAN_RUN_ID: String(run.id),
-      ITSAPLAN_TRIGGER: run.trigger,
-      ITSAPLAN_SYSTEM_PROMPT: run.systemPrompt,
-      ITSAPLAN_ISSUE: run.issueIdentifier ?? '',
-      ITSAPLAN_ISSUE_ID: run.issueId == null ? '' : String(run.issueId),
-    },
-  };
-}
-
 export async function handleRun(
   config: RunnerConfig,
   client: Client,
@@ -47,23 +32,24 @@ export async function handleRun(
   const label = run.issueIdentifier ?? `run ${run.id}`;
   log(`${label}: started (${run.trigger})`);
   try {
-    // Read as the command writes, not off the outcome: only the tail of the output is
-    // kept, and the line carrying the counts can fall outside it.
-    const usage = new UsageReader(config.outputFormat);
     const outcome = await withHeartbeat(
       log,
-      () => client.heartbeat(run.id),
-      execute(config, taskOf(run), { onData: (chunk) => usage.write(chunk) }),
+      () => client.heartbeat(run.id, run.traceEvents ? run.attempts : undefined),
+      runTask(config, client, run),
     );
-    usage.end();
-    await client.report(run.id, { ...outcome, usage: usage.value() });
     log(`${label}: ${outcome.status}${outcome.error ? ` — ${outcome.error}` : ''}`);
   } catch (err) {
     // The command itself never throws here; this is the runner failing to run or
     // report it. Reporting the failure keeps the run from being retried blindly.
     const message = err instanceof Error ? err.message : String(err);
     log(`${label}: runner error — ${message}`);
-    await client.report(run.id, { status: 'failed', error: message }).catch(() => {});
+    await client
+      .report(run.id, {
+        status: 'failed',
+        error: message,
+        ...(run.traceEvents && { attempt: run.attempts }),
+      })
+      .catch(() => {});
   }
 }
 

@@ -16,6 +16,7 @@ import { agentSkillRoutes } from './modules/agents/skills';
 import { agentToolRoutes } from './modules/agents/tools';
 import { customFieldRoutes } from './modules/custom-fields';
 import { issueTemplateRoutes } from './modules/issue-templates';
+import { projectTemplateRoutes } from './modules/project-templates';
 import { issueRoutes } from './modules/issues';
 import { initiativeRoutes } from './modules/initiatives';
 import { cycleRoutes } from './modules/cycles';
@@ -32,12 +33,14 @@ import { gitSettingsRoutes } from './modules/git';
 import { dashboardRoutes } from './modules/dashboards';
 import { noteBoardRoutes } from './modules/note-boards';
 import { documentRoutes } from './modules/documents';
+import { mentionRoutes } from './modules/mentions';
 import { analyticsRoutes } from './modules/analytics';
 import { chartRoutes } from './modules/charts';
 import { settingsRoutes } from './modules/settings';
 import { godRoutes } from './modules/god';
 import { agentScheduleRoutes } from './modules/agents/schedules';
 import { modelPriceRoutes } from './modules/agents/prices';
+import { runnerQueueRoutes } from './modules/agents/queue';
 import { agentRunnerRoutes } from './modules/agents/runner';
 import { agentChatRoutes } from './modules/agents/chat';
 import { agentInvocationRoutes } from './modules/agents/invocation';
@@ -71,6 +74,7 @@ export const planner = new Elysia({ name: 'planner' })
   })
   .use(projectRoutes)
   .use(teamRoutes)
+  .use(projectTemplateRoutes)
   .use(workspaceRoutes)
   .use(memberRoutes)
   .use(roleRoutes)
@@ -100,11 +104,13 @@ export const planner = new Elysia({ name: 'planner' })
   .use(agentScheduleRoutes)
   .use(modelPriceRoutes)
   .use(agentRunnerRoutes)
+  .use(runnerQueueRoutes)
   .use(agentChatRoutes)
   .use(agentInvocationRoutes)
   .use(dashboardRoutes)
   .use(noteBoardRoutes)
   .use(documentRoutes)
+  .use(mentionRoutes)
   .use(analyticsRoutes)
   .use(chartRoutes)
   .use(notificationRoutes)
