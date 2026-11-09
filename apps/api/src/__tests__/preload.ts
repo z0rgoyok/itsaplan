@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { afterAll } from 'bun:test';
 import { SQL } from 'bun';
 import { extendAuth } from '@repo/auth/extensions';
 
@@ -29,12 +30,27 @@ const worker = process.env.BUN_TEST_WORKER_ID;
 if (worker) {
   const url = new URL(process.env.DATABASE_URL!);
   const template = url.pathname.slice(1);
-  const copy = `${template}_${worker}`;
+  if (!/^\d+$/.test(worker) || !/^[A-Za-z0-9_]+$/.test(template) || !template.includes('test')) {
+    throw new Error('The test preloader needs a numeric worker id and a safe test database name.');
+  }
+  // A PID alone can be reused and two suite runs can land on the same worker id.
+  // A random run suffix makes every worker's copy private to that test process.
+  const copy = `${template}_${worker}_${randomBytes(6).toString('hex')}`;
   url.pathname = '/postgres';
-  const admin = new SQL(url.toString());
+  const adminUrl = url.toString();
+  const admin = new SQL(adminUrl);
   await admin.unsafe(`DROP DATABASE IF EXISTS "${copy}" WITH (FORCE)`);
   await admin.unsafe(`CREATE DATABASE "${copy}" TEMPLATE "${template}"`);
   await admin.close();
   url.pathname = `/${copy}`;
   process.env.DATABASE_URL = url.toString();
+
+  afterAll(async () => {
+    const cleanup = new SQL(adminUrl);
+    try {
+      await cleanup.unsafe(`DROP DATABASE IF EXISTS "${copy}" WITH (FORCE)`);
+    } finally {
+      await cleanup.close();
+    }
+  });
 }
