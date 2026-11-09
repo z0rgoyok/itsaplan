@@ -12,14 +12,33 @@ import {
 const appUrl = (path: string) =>
   typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
 
-// Each call throws with the API message on failure; on success the session cookie
-// is set and the proxy lets the user into the planner. A failure without a
-// message throws an empty one, and the caller (useAuthAction) words it.
+// Each call throws an AuthError on failure; on success the session cookie is set and
+// the proxy lets the user into the planner. The caller words the failure by its code
+// and status, since the server's message is English.
 
-// Sign-in was refused because the address is not confirmed yet. The only 403 the
-// sign-in endpoint raises is the verification gate in @repo/auth, so the status is
-// enough to tell it apart from wrong credentials and offer the link again.
-export class EmailNotConfirmedError extends Error {}
+// A refusal from the auth server, with better-auth's code and the HTTP status.
+export class AuthError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+    readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
+// Sign-in was refused because the address is not confirmed yet. The verification gate
+// in @repo/auth answers 403 with this code, as better-auth does; a deactivated account
+// and a disabled password form are 403s too, and must not offer the link again.
+export class EmailNotConfirmedError extends AuthError {}
+
+export function authError(error: { message?: string; code?: string; status?: number }): AuthError {
+  const { message = '', code, status } = error;
+  return code === 'EMAIL_NOT_VERIFIED'
+    ? new EmailNotConfirmedError(message, code, status)
+    : new AuthError(message, code, status);
+}
 
 export const authCaptchaFetchOptions = (token?: string) =>
   token ? { headers: { 'x-captcha-response': token } } : undefined;
@@ -48,10 +67,7 @@ export async function signInWithPassword(input: {
         password: input.password,
         fetchOptions: authCaptchaFetchOptions(input.captchaToken),
       });
-  if (!result.error) return;
-  const message = result.error.message ?? '';
-  if (result.error.code === 'EMAIL_NOT_CONFIRMED') throw new EmailNotConfirmedError(message);
-  throw new Error(message);
+  if (result.error) throw authError(result.error);
 }
 
 // autoSignIn (set in @repo/auth) signs the user in right after sign-up, unless the
@@ -60,7 +76,7 @@ export async function signInWithPassword(input: {
 // callbackURL is where the confirmation link lands when the instance sends one.
 //
 // On an invite-only instance the API rejects the sign-up unless the address has a
-// pending project invite, and the thrown message says so.
+// pending project invite, with a code the form words.
 export async function signUpWithEmail(input: {
   email: string;
   password: string;
@@ -73,10 +89,7 @@ export async function signUpWithEmail(input: {
     callbackURL: appUrl('/login?verified=1'),
     fetchOptions: authCaptchaFetchOptions(input.captchaToken),
   });
-  // The code lets the form say why the gate refused the address, in the visitor's language.
-  if (result.error) {
-    throw Object.assign(new Error(result.error.message ?? ''), { code: result.error.code });
-  }
+  if (result.error) throw authError(result.error);
 }
 
 // Sends the password reset link. The address is not confirmed to exist: better-auth
@@ -91,7 +104,7 @@ export async function sendPasswordResetEmail(email: string, captchaToken?: strin
     redirectTo: appUrl(`/reset-password?email=${encodeURIComponent(email)}`),
     fetchOptions: authCaptchaFetchOptions(captchaToken),
   });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
 }
 
 // Consumes the token from the reset link, sets the new password, and signs the user
@@ -103,7 +116,7 @@ export async function setNewPassword(input: {
   newPassword: string;
 }): Promise<{ signedIn: boolean }> {
   const result = await resetPassword({ token: input.token, newPassword: input.newPassword });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
   if (!input.email) return { signedIn: false };
   const attempt = await signIn.email({ email: input.email, password: input.newPassword });
   return { signedIn: !attempt.error };
@@ -119,7 +132,7 @@ export async function sendMagicLink(email: string): Promise<void> {
     callbackURL: appUrl('/'),
     errorCallbackURL: appUrl('/login'),
   });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
 }
 
 // Sends the address confirmation link again, for someone held back at sign-in.
@@ -128,7 +141,7 @@ export async function resendVerificationEmail(email: string): Promise<void> {
     email,
     callbackURL: appUrl('/login?verified=1'),
   });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
 }
 
 // Starts the Google round trip. Unlike every other call here this one navigates away
@@ -145,7 +158,7 @@ export async function signInWithGoogle(returnTo?: string): Promise<void> {
     callbackURL: appUrl(returnTo ?? '/'),
     errorCallbackURL: appUrl(returnTo ?? '/login'),
   });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
 }
 
 // Starts the round trip through the instance's own OIDC provider. Same shape as the
@@ -157,10 +170,10 @@ export async function signInWithOidc(returnTo?: string): Promise<void> {
     callbackURL: appUrl(returnTo ?? '/'),
     errorCallbackURL: appUrl(returnTo ?? '/login'),
   });
-  if (result.error) throw new Error(result.error.message ?? '');
+  if (result.error) throw authError(result.error);
 }
 
 export async function signInWithPasskey(): Promise<void> {
   const result = await signIn.passkey();
-  if (result?.error) throw new Error(result.error.message ?? '');
+  if (result?.error) throw authError(result.error);
 }

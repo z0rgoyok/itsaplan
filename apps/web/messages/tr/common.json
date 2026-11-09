@@ -101,6 +101,8 @@
     "unreachable": "Ajana ulaşılamadı. Tekrar deneyin.",
     "runnerOffline": "Runner çevrimdışı",
     "runnerOfflineHint": "Bu ajanla sohbet etmek için makinenizde runner'ı başlatın.",
+    "chatDisabled": "Bu ajan sohbette kullanılamıyor",
+    "chatDisabledHint": "Bu ajanın sohbeti kapalı. Bahsetmeler, devretmeler ve zamanlamalar çalışmaya devam eder.",
     "attachFile": "Ajanın okuması için bir tablo, belge, PDF veya metin dosyası ekleyin",
     "removeAttachment": "Eki kaldır",
     "uploadFailed": "Dosya yüklenemedi.",
@@ -134,7 +136,16 @@
     "stopSharing": "Paylaşımı durdur",
     "createLink": "Bağlantı oluştur",
     "copy": "Kopyala",
-    "copied": "Kopyalandı"
+    "copied": "Kopyalandı",
+    "calendarFeed": "Takvim akışı",
+    "calendarFeedHint": "Bu görünüme abone olmak için bu bağlantıyı takvim uygulamanıza kopyalayın.",
+    "expiry": "Süre sonu",
+    "expiryHint": "Bağlantı bundan sonra çalışmaz.",
+    "neverExpires": "Süresi dolmaz",
+    "expiresInDays": "{count, plural, other {# gün içinde}}",
+    "expiresOn": "{date} tarihine kadar",
+    "expiryPickDate": "Ya da son günü seçin:",
+    "expiryFailed": "Bağlantının süre sonu değiştirilemedi. Tekrar deneyin."
   },
   "actions": "İşlemler",
   "clearSearch": "Aramayı temizle",
@@ -198,7 +209,8 @@
     "copiedLink": "Kopyalandı",
     "editLink": "Bağlantıyı düzenle",
     "retryPreview": "Tekrar dene",
-    "copyLinkFailed": "Bağlantı kopyalanamadı. Yukarıdaki URL'yi seçip kopyalayın."
+    "copyLinkFailed": "Bağlantı kopyalanamadı. Yukarıdaki URL'yi seçip kopyalayın.",
+    "todoList": "Yapılacaklar listesi"
   },
   "chart": {
     "download": "Grafiği kaydet",
@@ -212,5 +224,6 @@
     "perPage": "/ sayfa",
     "range": "{total} kayıttan {first}-{last} arası"
   },
-  "aboutCloudAndPro": "Cloud ve Pro hakkında bilgi edinin"
+  "aboutCloudAndPro": "Cloud ve Pro hakkında bilgi edinin",
+  "signingOut": "Oturum kapatılıyor…"
 }

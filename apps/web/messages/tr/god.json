@@ -170,6 +170,20 @@
     },
     "joined": "{date} tarihinde katıldı"
   },
+  "roles": {
+    "newRole": "Yeni rol",
+    "empty": "Henüz sistem rolü yok.",
+    "default": "Varsayılan",
+    "defaultUndeletable": "Varsayılan rol silinemez",
+    "columns": {
+      "role": "Rol",
+      "permissions": "İzinler"
+    },
+    "edit": "Rolü düzenle",
+    "delete": "Rolü sil",
+    "deleteTitle": "\"{name}\" rolünü sil",
+    "deleteDescription": "Bu işlem geri alınamaz."
+  },
   "general": {
     "saved": "Proje varsayılanları kaydedildi",
     "projectDefaults": "Proje varsayılanları",
@@ -179,12 +193,28 @@
     "workspaces": "Çalışma Alanları",
     "personalWorkspaces": "Herkes için bir çalışma alanı",
     "personalWorkspacesHint": "Her hesaba kullanıcının adını taşıyan kendine ait bir çalışma alanı verilir. Kapalıyken kişiler yalnızca eklendikleri çalışma alanlarında çalışabilir.",
+    "invites": "Davetler",
+    "inviteSearch": "Davet ederken kişi öner",
+    "inviteSearchHint": "Bir ekip sahibi veya yöneticisi davet penceresine adres yazarken, bu örnekteki tüm çalışma alanlarından eşleşen hesaplar ad ve e-posta ile listelenir. Kapalıyken adresin tamamı yazılmalıdır.",
+    "invitesSaved": "Davet ayarları kaydedildi",
     "agents": "Ajanlar",
     "agentsSaved": "Ajan ayarları kaydedildi",
+    "embedding": "Yerleştirme",
+    "embedSites": "Güvenilir siteler",
+    "embedSitesHint": "Herkese açık paylaşılan işler ve panolar yalnızca bu sitelerde bir çerçevede açılır. Siteleri virgülle ayırın.",
+    "embedSitesInvalid": "Her siteyi yol olmadan https://example.com biçiminde girin.",
+    "embedSaved": "Güvenilir siteler kaydedildi",
     "traceRetention": "Çalıştırma izlerini saklama süresi",
     "traceRetentionHint": "Her ajan çalıştırması model ve araç çağrılarını kaydeder. Kullanım panoları yalnızca saklanan çalıştırmaları sayar.",
     "traceDays": "{days, plural, one {# gün} other {# gün}}",
-    "traceForever": "Süresiz"
+    "traceForever": "Süresiz",
+    "maxRunTime": "Azami çalışma süresi",
+    "maxRunTimeHint": "Bir ajan çalışmasının durdurulup başarısız olarak kaydedilmeden önce ne kadar sürebileceği. Bir ajanın kendi sınırı bunu aşamaz.",
+    "runMinutes": "{minutes, plural, one {# dakika} other {# dakika}}",
+    "runSeconds": "{seconds} sn",
+    "concurrentRuns": "Aynı anda çalıştırma",
+    "concurrentRunsHint": "Bu örneklemde aynı anda kaç ajan çalıştırmasının yürüyeceği. Diğerleri sırada bekler. Sohbetler ve harici ajanlar sayılmaz. 0 sınırsız demektir.",
+    "concurrentRunsInvalid": "0 ile {max} arasında bir tam sayı girin."
   },
   "authentication": {
     "saved": "Kimlik doğrulama ayarları kaydedildi",

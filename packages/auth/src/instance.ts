@@ -50,7 +50,8 @@ export interface AuthSettings {
   // mail provider: the api rejects turning it on while none is configured, and
   // setEmailSettings clears it when the provider is removed.
   requireEmailVerification: boolean;
-  // Offer sign-in by emailed link alongside the password.
+  // Offer sign-in by emailed link alongside the password. Needs a mail provider, under
+  // the same rule as requireEmailVerification.
   magicLink: boolean;
   // Offer the email/password form at all. Turning it off leaves single sign-on (and
   // passkeys, which are added to an account that already exists) as the way in, so
@@ -69,6 +70,9 @@ export interface AuthSettings {
   // pending invite older than this neither gates registration nor can be accepted.
   // 0 disables the limit (invites never expire).
   inviteTtlDays: number;
+  // Let whoever may invite to a team find accounts of the instance by name or address.
+  // Off by default: the search reaches accounts in every workspace.
+  inviteSearch: boolean;
   // The domains a new account's address must be at, lowercase. Empty admits any address.
   // Accounts that already exist keep signing in.
   allowedEmailDomains: string[];
@@ -83,6 +87,7 @@ function defaultAuthSettings(): AuthSettings {
     trustProviderEmails: false,
     personalWorkspaces: true,
     inviteTtlDays: 7,
+    inviteSearch: false,
     allowedEmailDomains: [],
   };
 }
@@ -272,10 +277,14 @@ export async function setEmailSettings(patch: InstanceEmailPatch): Promise<Insta
   const next = await resolveEmailConfig(patch);
   const redacted = toEmailDto(next);
   await writeSecret(INSTANCE_EMAIL_SECRET_KEY, next, redacted);
-  // Without a provider no confirmation link can be sent, so the requirement goes
-  // with it rather than locking every new account out.
-  if (!hasEmailProvider(next) && (await getAuthSettings()).requireEmailVerification) {
-    await setAuthSettings({ requireEmailVerification: false });
+  // Without a provider no confirmation link or sign-in link can be sent, so both
+  // settings go with it rather than locking every new account out or answering a
+  // magic-link request with a mail that never leaves.
+  if (!hasEmailProvider(next)) {
+    const settings = await getAuthSettings();
+    if (settings.requireEmailVerification || settings.magicLink) {
+      await setAuthSettings({ requireEmailVerification: false, magicLink: false });
+    }
   }
   return redacted;
 }

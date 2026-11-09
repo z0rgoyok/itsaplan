@@ -1,10 +1,34 @@
-import { db, teamInvite, teamMember, projectMember, teamRole, team, project, user } from '@repo/db';
-import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import {
+  db,
+  aiAgent,
+  teamInvite,
+  teamMember,
+  projectMember,
+  teamRole,
+  team,
+  project,
+  user,
+} from '@repo/db';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { getAuthSettings, inviteValidSince } from '@repo/auth';
-import { HttpError, iso, pgErrorCode } from '#shared/lib';
+import { HttpError, iso, likePattern, pgErrorCode } from '#shared/lib';
 import { getProjectAccess, getTeamAccess } from '#shared/access';
 import { teamRef } from '#modules/teams/ref';
 import { getMembership, type MemberRole } from '#modules/members/service';
+import { getDefaultRoleId } from '#modules/roles/service';
 import { assertSeatFree, getTeamMembership, runsTeam, type TeamRole } from '#modules/teams/service';
 import { isInviteEmailAllowed } from './email-policy';
 
@@ -41,7 +65,7 @@ export interface InviteRow {
   // The role in that project. Null when the invite names no project.
   role: MemberRole | null;
   // The custom role a project member joins on. roleId is null when the invite falls
-  // back to the team's default role; roleName resolves it for display. A project
+  // back to the default role; roleName resolves it for display. A project
   // owner has both null.
   roleId: number | null;
   roleName: string | null;
@@ -53,6 +77,10 @@ export interface InviteRow {
   invitedByName: string | null;
   invitedByEmail: string | null;
 }
+
+// A row of an invite listing. The token is null where the viewer could not have issued
+// the invite: whoever holds the link can register the invited address and accept it.
+export type ListedInvite = Omit<InviteRow, 'token'> & { token: string | null };
 
 // Row shown to the invitee opening the link, with enough context to decide. Never
 // exposes the internal project id; the team is named by its ref, which the project's
@@ -107,6 +135,8 @@ function selectInvites() {
     .select({
       id: teamInvite.id,
       token: teamInvite.token,
+      teamId: teamInvite.teamId,
+      projectId: teamInvite.projectId,
       email: teamInvite.email,
       teamRole: teamInvite.teamRole,
       projectKey: project.key,
@@ -288,22 +318,79 @@ export async function getInviteById(id: number): Promise<InviteRow | null> {
   return rows[0] ? toRow(rows[0], await inviteTtlDays()) : null;
 }
 
-export async function listProjectInvites(projectId: number): Promise<InviteRow[]> {
+// issuerId is the viewer when they may send invites here, null when they may only read
+// them; the ranks of each invite are then checked against that standing.
+async function toListed(rows: InviteSelection[], issuerId: string | null): Promise<ListedInvite[]> {
+  const ttlDays = await inviteTtlDays();
+  return Promise.all(
+    rows.map(async (r) => {
+      const row = toRow(r, ttlDays);
+      const grant = { ...r, projectRole: r.role };
+      if (issuerId && (await mayGrantInviteRanks(grant, issuerId))) return row;
+      return { ...row, token: null };
+    }),
+  );
+}
+
+export async function listProjectInvites(
+  projectId: number,
+  issuerId: string | null,
+): Promise<ListedInvite[]> {
   const rows = await selectInvites()
     .where(eq(teamInvite.projectId, projectId))
     .orderBy(desc(teamInvite.createdAt));
-  const ttlDays = await inviteTtlDays();
-  return rows.map((r) => toRow(r, ttlDays));
+  return toListed(rows, issuerId);
 }
 
 // Every invite of the team, including the ones that also name one of its projects:
 // whoever runs the team sees who was invited anywhere in it.
-export async function listTeamInvites(teamId: number): Promise<InviteRow[]> {
+export async function listTeamInvites(teamId: number, issuerId: string): Promise<ListedInvite[]> {
   const rows = await selectInvites()
     .where(eq(teamInvite.teamId, teamId))
     .orderBy(desc(teamInvite.createdAt));
-  const ttlDays = await inviteTtlDays();
-  return rows.map((r) => toRow(r, ttlDays));
+  return toListed(rows, issuerId);
+}
+
+const INVITE_CANDIDATE_LIMIT = 8;
+// The matches read to find them, since the invite policy may refuse some: a search whose
+// first matches it mostly refuses suggests fewer.
+const INVITE_CANDIDATE_SCAN = 40;
+
+// The whole instance is searched: an invitee is not in the team yet. Only people the team
+// would take an invite for are suggested.
+export async function listInviteCandidates(teamId: number, search: string) {
+  if (!(await getAuthSettings()).inviteSearch) {
+    throw new HttpError(403, 'Searching people is turned off on this instance');
+  }
+  const pattern = likePattern(search);
+  const matches = await db
+    .select({ userId: user.id, name: user.name, email: user.email, image: user.image })
+    .from(user)
+    .where(
+      and(
+        or(ilike(user.name, pattern), ilike(user.email, pattern)),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(teamMember)
+            .where(and(eq(teamMember.teamId, teamId), eq(teamMember.userId, user.id))),
+        ),
+        notExists(
+          db
+            .select({ one: sql`1` })
+            .from(aiAgent)
+            .where(eq(aiAgent.userId, user.id)),
+        ),
+      ),
+    )
+    .orderBy(asc(user.name), asc(user.email))
+    .limit(INVITE_CANDIDATE_SCAN);
+  const candidates: typeof matches = [];
+  for (const match of matches) {
+    if (candidates.length === INVITE_CANDIDATE_LIMIT) break;
+    if (await isInviteEmailAllowed(teamId, match.email, true)) candidates.push(match);
+  }
+  return candidates;
 }
 
 // Removes an invite of the given project. Returns true when one existed. Used to
@@ -471,20 +558,10 @@ export async function acceptInvite(
       });
 
     if (invite.projectId != null) {
-      // A member joins on the invite's chosen role, falling back to the team's
-      // default role when none was set; a project owner bypasses roles.
-      let roleId: number | null = null;
-      if (invite.projectRole === 'member') {
-        if (invite.roleId != null) {
-          roleId = invite.roleId;
-        } else {
-          const [def] = await tx
-            .select({ id: teamRole.id })
-            .from(teamRole)
-            .where(and(eq(teamRole.teamId, invite.teamId), eq(teamRole.isDefault, true)));
-          roleId = def?.id ?? null;
-        }
-      }
+      // A member joins on the invite's chosen role, falling back to the default role
+      // when none was set; a project owner bypasses roles.
+      const roleId =
+        invite.projectRole === 'member' ? (invite.roleId ?? (await getDefaultRoleId())) : null;
       await tx
         .insert(projectMember)
         .values({
@@ -529,4 +606,32 @@ export async function rejectInvite(inviteId: number): Promise<void> {
     .update(teamInvite)
     .set({ status: 'rejected', respondedAt: new Date() })
     .where(eq(teamInvite.id, inviteId));
+}
+
+export async function listReceivedInvites(
+  email: string,
+  window: { limit: number; offset: number },
+) {
+  const since = await inviteValidSince();
+  const where = and(
+    eq(teamInvite.email, normalizeEmail(email)),
+    eq(teamInvite.status, 'pending'),
+    since ? gte(teamInvite.createdAt, since) : undefined,
+  );
+  const [items, counts] = await Promise.all([
+    db
+      .select({ token: teamInvite.token, teamName: team.name, projectName: project.name })
+      .from(teamInvite)
+      .innerJoin(team, eq(team.id, teamInvite.teamId))
+      .leftJoin(project, eq(project.id, teamInvite.projectId))
+      .where(where)
+      .orderBy(desc(teamInvite.createdAt), desc(teamInvite.id))
+      .limit(window.limit)
+      .offset(window.offset),
+    db
+      .select({ total: sql<number>`count(*)::int` })
+      .from(teamInvite)
+      .where(where),
+  ]);
+  return { items, total: counts[0]?.total ?? 0 };
 }

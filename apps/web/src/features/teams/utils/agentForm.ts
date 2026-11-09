@@ -8,7 +8,7 @@ import type {
 import { transliterate } from '@/utils/transliterate';
 import { delaySecFromMinutes } from '@/utils/runDelay';
 
-// The editable shape of an agent form. temperature/maxSteps are kept as strings so
+// The editable shape of an agent form. The number inputs are kept as strings so
 // the inputs can be left blank; they are parsed to numbers (or null) on submit.
 export interface AgentFormValue {
   name: string;
@@ -21,10 +21,14 @@ export interface AgentFormValue {
   temperature: string;
   reasoningEffort: ReasoningEffort | null;
   maxSteps: string;
+  runTimeoutSec: string;
   memoryEnabled: boolean;
   memoryLastMessages: string;
   triggerOnMention: boolean;
   triggerOnAssign: boolean;
+  // Whether the agent may be chatted with. Off, it drops out of the chat selector and
+  // the chat routes reject it; a mention, a delegation, and a schedule are unaffected.
+  chatEnabled: boolean;
   // The member custom fields that start a run when the agent is set into one, each
   // with its own wait.
   fieldTriggers: FormFieldTrigger[];
@@ -90,10 +94,12 @@ export function initialAgentValue(agent?: AiAgent): AgentFormValue {
     temperature: agent?.temperature != null ? String(agent.temperature) : '',
     reasoningEffort: agent?.reasoningEffort ?? null,
     maxSteps: agent?.maxSteps != null ? String(agent.maxSteps) : '',
+    runTimeoutSec: agent?.runTimeoutSec != null ? String(agent.runTimeoutSec) : '',
     memoryEnabled: agent?.memoryEnabled ?? false,
     memoryLastMessages: agent?.memoryLastMessages != null ? String(agent.memoryLastMessages) : '',
     triggerOnMention: agent?.triggerOnMention ?? true,
     triggerOnAssign: agent?.triggerOnAssign ?? false,
+    chatEnabled: agent?.chatEnabled ?? true,
     fieldTriggers: (agent?.fieldTriggers ?? []).map((trigger) => ({
       fieldId: trigger.fieldId,
       delayMin: String(Math.round(trigger.delaySec / 60)),
@@ -125,6 +131,7 @@ function configFields(v: AgentFormValue) {
     instructions: v.instructions.trim() || null,
     triggerOnMention: v.triggerOnMention,
     triggerOnAssign: v.triggerOnAssign,
+    chatEnabled: v.chatEnabled,
     fieldTriggers: v.fieldTriggers.map((trigger) => ({
       fieldId: trigger.fieldId,
       delaySec: delaySecFromMinutes(trigger.delayMin),
@@ -146,6 +153,7 @@ function configFields(v: AgentFormValue) {
     temperature: parseNum(v.temperature),
     reasoningEffort: v.reasoningEffort,
     maxSteps: parseNum(v.maxSteps),
+    runTimeoutSec: parseNum(v.runTimeoutSec),
     memoryEnabled: v.memoryEnabled,
     memoryLastMessages: v.memoryEnabled ? parseNum(v.memoryLastMessages) : null,
   };

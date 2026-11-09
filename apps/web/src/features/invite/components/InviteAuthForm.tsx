@@ -14,17 +14,16 @@ import {
   FieldSeparator,
 } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { registrationRefusalKey } from '@/utils/registrationRefusals';
 import { useAuthConfig } from '@/services/authConfig.service';
 import AuthLoginAlternatives from '@/features/auth/components/login/AuthLoginAlternatives';
 import { useRedirectError } from '@/features/auth/hooks/useRedirectError';
+import { useRefusalMessage } from '@/hooks/useRefusalMessage';
 import {
   signInWithGoogle,
   signInWithOidc,
   signInWithPasskey,
 } from '@/features/auth/services/auth.service';
 import {
-  InviteAuthError,
   isExistingAccountError,
   registerAndAccept,
   signInForInvite,
@@ -53,11 +52,12 @@ export default function InviteAuthForm({
 }) {
   const t = useTranslations('invite');
   const tAuth = useTranslations('auth.errors');
+  const refusalMessage = useRefusalMessage();
   const tLogin = useTranslations('auth.login');
   const router = useRouter();
   const passwordEnabled = useAuthConfig()?.emailPassword !== false;
   const params = useSearchParams();
-  const redirectError = useRedirectError()(params.get('error'), params.get('error_description'));
+  const redirectError = useRedirectError()(params.get('error'));
   const returnTo = `/invite/${token}`;
   const [mode, setMode] = useState<Mode>(hasAccount ? 'signin' : 'register');
   const [password, setPassword] = useState('');
@@ -116,10 +116,7 @@ export default function InviteAuthForm({
         switchMode('signin');
         setNotice(t('existingAccountNotice'));
       } else {
-        const refusal =
-          err instanceof InviteAuthError ? registrationRefusalKey(err.code) : undefined;
-        if (refusal) setError(tAuth(refusal));
-        else setError(err instanceof Error ? err.message : t('genericError'));
+        setError(refusalMessage(err));
       }
       setPending(false);
     } finally {
@@ -127,7 +124,7 @@ export default function InviteAuthForm({
     }
   }
 
-  async function signInOtherwise(start: () => Promise<void>, fallback = t('genericError')) {
+  async function signInOtherwise(start: () => Promise<void>, fallback?: string) {
     setError(null);
     setNotice(null);
     setPending(true);
@@ -135,7 +132,7 @@ export default function InviteAuthForm({
       await start();
       router.refresh();
     } catch (err) {
-      setError((err instanceof Error && err.message) || fallback);
+      setError(refusalMessage(err, fallback));
     }
     setPending(false);
   }

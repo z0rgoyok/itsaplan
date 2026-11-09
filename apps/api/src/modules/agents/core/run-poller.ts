@@ -1,7 +1,7 @@
 import { db, teamWorkspaceId } from '@repo/db';
 import { getProjectTeamId } from '#modules/projects/service';
-import { intEnv } from '#shared/lib';
-import { getLimits } from '#shared/limits';
+import { getAgentSettings } from '#modules/settings/service';
+import { getLimits, getRunLimit } from '#shared/limits';
 import { framePrompt, peopleContext, runModePreamble } from './prompt/framing';
 import { agentRunStarted, recordAgentRunFinished } from './run-activity';
 import { runAdmissionDelay } from './run-admission';
@@ -9,6 +9,7 @@ import { runRefusal } from './run-refusal';
 import {
   agentRunConfig,
   claimDueRuns,
+  admitWorkspaceRun,
   countRunsAhead,
   deferRun,
   markRunFailed,
@@ -25,9 +26,6 @@ import { runThreadId } from './runtime/thread-ids';
 // the only thing a run is built from, so nothing about which project or which bot user
 // it acts as can be handed in from outside.
 
-// How long a run waits when its workspace has no free slot.
-const DEFERRED_RETRY_SECONDS = 30;
-
 export async function processAgentRuns(): Promise<void> {
   const runs = await claimDueRuns();
   await Promise.all(runs.map(processRun));
@@ -36,9 +34,10 @@ export async function processAgentRuns(): Promise<void> {
 async function processRun(run: ClaimedRun): Promise<void> {
   const teamId = await getProjectTeamId(run.projectId);
   const workspaceId = await teamWorkspaceId(teamId, db);
-  const { maxConcurrentRuns, maxRunSeconds } = await getLimits(workspaceId);
-  if (maxConcurrentRuns > 0 && (await countRunsAhead(workspaceId, run.id)) >= maxConcurrentRuns) {
-    await deferRun(run.id, DEFERRED_RETRY_SECONDS);
+  const limits = await getLimits(workspaceId);
+  const runLimit = await getRunLimit(workspaceId, limits);
+  if (runLimit > 0 && (await countRunsAhead(workspaceId, run.id)) >= runLimit) {
+    await deferRun(run.id, 30);
     return;
   }
   const wait = await runAdmissionDelay(run);
@@ -61,9 +60,23 @@ async function processRun(run: ClaimedRun): Promise<void> {
   // The issue's timeline entries are written here, where the agent's work actually
   // starts and ends. A failure that will be retried is not the end of the run, so only
   // the last attempt logs one.
-  const timeoutMs = runTimeoutMs(maxRunSeconds);
+  const configuredTimeoutMs = runTimeoutMs(
+    run.agentRunTimeoutSec,
+    (await getAgentSettings()).maxRunSeconds,
+    limits.maxRunSeconds,
+  );
+  if (run.executionDeadline <= performance.now()) return;
   try {
+    if (!(await admitWorkspaceRun(run, workspaceId, runLimit))) return;
     await agentRunStarted(run);
+    const timeoutMs = Math.floor(
+      Math.min(configuredTimeoutMs, run.executionDeadline - performance.now()),
+    );
+    if (timeoutMs <= 0) {
+      await recordAgentRunFinished(run, 'failed');
+      await markRunFailed(run.id, 'Claim execution budget exhausted');
+      return;
+    }
     const result = await runAgent(run.agentId, run.projectId, framePrompt(run), {
       callerUserId: run.agentUserId,
       threadId: runThreadId(run),
@@ -71,14 +84,14 @@ async function processRun(run: ClaimedRun): Promise<void> {
       scheduleId: run.scheduleId,
       runId: run.id,
       trigger: run.trigger,
-      contextPreamble: runModePreamble(run.trigger) + peopleContext(run),
+      contextPreamble: runModePreamble(run) + peopleContext(run),
       abortSignal: AbortSignal.timeout(timeoutMs),
     });
     if (result.aborted) {
       // Mastra resolves generate() on abort, so the partial text would read as a success.
       // Not retried: a run that hits the time limit will hit it again.
       await recordAgentRunFinished(run, 'failed');
-      await markRunFailed(run.id, `Timed out after ${Math.round(timeoutMs / 1000)}s`);
+      await markRunFailed(run.id, `Timed out after ${Math.round(timeoutMs / 1000)}s`, result.text);
       return;
     }
     if (result.stepLimit) {
@@ -99,10 +112,15 @@ async function processRun(run: ClaimedRun): Promise<void> {
   }
 }
 
-// The wall time a run gets: the workspace's ceiling where it has one, and a cap of its own
-// either way. Without it a run that never returns holds its slot until the claim lease
-// expires and is then started again, having recorded nothing.
-function runTimeoutMs(maxRunSeconds: number): number {
-  const cap = intEnv('AGENT_RUN_TIMEOUT_MS', 240_000);
-  return maxRunSeconds > 0 ? Math.min(maxRunSeconds * 1000, cap) : cap;
+// The wall time a run gets: the agent's own limit or else the instance's maximum, never
+// above that maximum or the workspace's ceiling where it has one. Without a limit a run
+// that never returns holds its slot until the claim lease expires and is then started
+// again, having recorded nothing.
+function runTimeoutMs(
+  agentSeconds: number | null,
+  instanceSeconds: number,
+  workspaceSeconds: number,
+): number {
+  const seconds = Math.min(agentSeconds ?? instanceSeconds, instanceSeconds);
+  return (workspaceSeconds > 0 ? Math.min(seconds, workspaceSeconds) : seconds) * 1000;
 }
