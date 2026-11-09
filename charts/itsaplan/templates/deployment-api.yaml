@@ -27,10 +27,9 @@ spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: {{ .Values.serviceAccount.name | default (include "itsaplan.fullname" .) }}
       {{- end }}
-      {{- with .Values.podSecurityContext }}
+      {{- $podSecurityContext := mergeOverwrite (dict "fsGroup" 10001 "fsGroupChangePolicy" "OnRootMismatch") (.Values.podSecurityContext | default dict) }}
       securityContext:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- toYaml $podSecurityContext | nindent 8 }}
       {{- with (.Values.api.nodeSelector | default .Values.nodeSelector) }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
