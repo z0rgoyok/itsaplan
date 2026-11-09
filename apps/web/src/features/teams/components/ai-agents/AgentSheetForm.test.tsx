@@ -111,7 +111,12 @@ beforeEach(async () => {
     pretendToBeVisual: true,
   });
   Object.assign(dom.window, {
-    __ITSAPLAN_ENV__: { apiUrl: 'http://api.test', privacyUrl: '', termsUrl: '' },
+    __ITSAPLAN_ENV__: {
+      apiUrl: 'http://api.test',
+      privacyUrl: '',
+      termsUrl: '',
+      turnstileSiteKey: '',
+    },
   });
   for (const name of replacedGlobals) {
     if (name in dom.window) {

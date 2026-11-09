@@ -141,6 +141,10 @@ export async function listChatThreads(
   agentId: number,
   opts: ThreadListOpts = {},
 ): Promise<ChatThreadPage> {
+  // Mastra creates its tables on first use. Read them directly only after the
+  // store has done so; otherwise an agent that has never run makes this route
+  // query a table that does not exist yet.
+  await getStore().init();
   if (opts.favorites) return favoriteChatThreads(resourceId, agentId);
   const term = searchTerm(opts.q);
   const page = opts.page ?? 0;

@@ -126,6 +126,7 @@ beforeEach(async () => {
     apiUrl: 'https://api.example.test',
     privacyUrl: '',
     termsUrl: '',
+    turnstileSiteKey: '',
   };
   dom.window.Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
   dom.window.Range.prototype.getBoundingClientRect = () => new dom.window.DOMRect();

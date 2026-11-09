@@ -1,6 +1,6 @@
 # ── Webhook delivery worker (Bun) — built from the monorepo root ──
 # build context in docker-compose = repository root (.)
-FROM oven/bun:1.4.4-alpine AS base
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS base
 WORKDIR /app
 
 # 1) Install dependencies from manifests (cacheable layer). All workspace
@@ -36,6 +36,10 @@ ARG BUILD_NAME=community
 ENV BUILD_NAME=$BUILD_NAME
 COPY --from=install /app ./
 COPY . .
+
+RUN chmod -R a+rX /app
+
+USER bun
 
 # The api applies migrations on startup; the worker only reads/writes existing
 # tables. It polls the delivery queue, so it tolerates the tables not existing yet

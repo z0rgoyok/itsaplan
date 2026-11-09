@@ -1,6 +1,6 @@
 # ── Elysia API (Bun) — built from the monorepo root ──
 # build context in docker-compose = repository root (.)
-FROM oven/bun:1.4.4-alpine AS base
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS base
 WORKDIR /app
 
 # 1) Install dependencies from manifests (cacheable layer). All workspace
@@ -48,14 +48,21 @@ RUN bun install --frozen-lockfile $INSTALL_FILTER $INSTALL_FLAGS \
 # newer than itself. The Railway template runs Postgres 18 and the compose files run 17,
 # so the image ships the 18 client, which dumps both. The bun image is built on Alpine
 # 3.22, which has no 18 client, so this stage is Alpine 3.23 with bun copied in.
-FROM alpine:3.23 AS release
+FROM alpine:3.23@sha256:469c9ea410b9215eaee7976ba6c0639039b444be8e5d638f7abbada189971eb2 AS release
 WORKDIR /app
 ENV NODE_ENV=production
 ENV BUN_RUNTIME_TRANSPILER_CACHE_PATH=0
-RUN apk add --no-cache libgcc libstdc++ postgresql18-client
+RUN apk add --no-cache libgcc libstdc++ postgresql18-client \
+ && addgroup -S -g 10001 app \
+ && adduser -S -D -H -u 10001 -G app app \
+ && install -d -o app -g app -m 0700 /backups
 COPY --from=base /usr/local/bin/bun /usr/local/bin/
 COPY --from=install /app ./
 COPY . .
+
+RUN chmod -R a+rX /app
+
+USER app
 
 EXPOSE 3000
 # Apply migrations before starting the server.

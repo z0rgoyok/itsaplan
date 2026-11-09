@@ -101,7 +101,7 @@ beforeEach(async () => {
     IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
   });
   Object.defineProperty(window, '__ITSAPLAN_ENV__', {
-    value: { apiUrl: 'https://example.test', privacyUrl: '', termsUrl: '' },
+    value: { apiUrl: 'https://example.test', privacyUrl: '', termsUrl: '', turnstileSiteKey: '' },
   });
   client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } });
   const { createRoot } = await import('react-dom/client');

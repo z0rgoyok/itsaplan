@@ -1,6 +1,6 @@
 # ── Next.js (standalone) — built from the monorepo root ──
 # build context in docker-compose = repository root (.)
-FROM oven/bun:1.4.4-alpine AS base
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS base
 WORKDIR /app
 
 # 1) Install dependencies from manifests (cacheable layer). All workspace
@@ -51,9 +51,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3001
 ENV HOSTNAME=0.0.0.0
 
-COPY --from=build /app/apps/web/.next/standalone ./
-COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=build /app/apps/web/public ./apps/web/public
+COPY --chown=node:node --from=build /app/apps/web/.next/standalone ./
+COPY --chown=node:node --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --chown=node:node --from=build /app/apps/web/public ./apps/web/public
+
+USER node
 
 EXPOSE 3001
 CMD ["node", "apps/web/server.js"]
